@@ -26,7 +26,7 @@
     analyser.getByteFrequencyData(data);
     const average = data.reduce((sum, value) => sum + value, 0) / data.length / 255;
     intensity = Math.min(1, Math.max(0.1, average * 2.4));
-    animationFrame = requestAnimationFrame(animate);
+    if (typeof window !== 'undefined') animationFrame = requestAnimationFrame(animate);
   }
 
   async function toggle() {
@@ -45,7 +45,7 @@
         oscillator = undefined;
       }
       isPlaying = false;
-      cancelAnimationFrame(animationFrame);
+      if (typeof window !== 'undefined') cancelAnimationFrame(animationFrame);
       intensity = 0.18;
       return;
     }
@@ -94,7 +94,7 @@
   }
 
   onDestroy(() => {
-    cancelAnimationFrame(animationFrame);
+    if (typeof window !== 'undefined') cancelAnimationFrame(animationFrame);
     oscillator?.stop();
     audioContext?.close();
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);

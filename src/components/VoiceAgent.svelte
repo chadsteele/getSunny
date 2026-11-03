@@ -11,10 +11,9 @@
   import AudioControls from './AudioControls.svelte';
   import Sparkle from './Sparkle.svelte';
 
-  type Status = 'listening' | 'thinking' | 'speaking' | 'paused' | 'ended' | 'error';
+  type Status = 'downloading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'ended' | 'error';
 
-  const SYSTEM_PROMPT =
-    'You are Sunny, a helpful voice assistant. Answer in one or two short conversational sentences, no more than 35 words.';
+  const MAX_RESPONSE_WORDS = 40;
   const TRANSCRIPTION_MODEL = 'onnx-community/moonshine-tiny-ONNX';
   const LLM_MODEL = 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC';
   const PIPER_VOICE = 'en_US-libritts_r-medium';
@@ -25,7 +24,8 @@
   };
   const SILENCE_THRESHOLD = 0.08;
 
-  let status = $state<Status>('listening');
+  let systemPrompt = '';
+  let status = $state<Status>('downloading');
   let intensity = $state(0.18);
   let conversationActive = $state(true);
   let lastUtterance = $state('');
@@ -33,6 +33,7 @@
   let downloadStatus = $state('Preparing voice models...');
   let downloadProgress = $state(0);
   let isDownloading = $state(true);
+  let downloadingModel = $state('voice models');
   let inputVolume = $state(0);
   let inputStream: MediaStream | undefined;
   let inputContext: AudioContext | undefined;
@@ -56,10 +57,15 @@
   let transcriber = transformers.speechToText(TRANSCRIPTION_MODEL);
   let speaker: TtsSession | undefined;
   let modelPreparation: Promise<void> | undefined;
+  let hasAnnouncedReady = false;
+  let downloadingOccurred = false;
+  let lastStatusAnnouncement = '';
   const loggedProgress = new Map<string, number>();
 
   const statusLabel = $derived(
-    status === 'listening'
+    status === 'downloading'
+      ? 'Downloading...'
+      : status === 'listening'
       ? 'Listening...'
       : status === 'thinking'
         ? 'Thinking...'
@@ -71,6 +77,54 @@
               ? 'Ended'
               : 'Something went wrong',
   );
+
+  function speakDiagnostic(message: string) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      console.warn('[Sunny] Browser speech diagnostics unavailable:', message);
+      return;
+    }
+    console.log('[Sunny] Speaking diagnostic:', message);
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(message);
+    utterance.rate = 1;
+    utterance.volume = 0.8;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  $effect(() => {
+    const currentStatus = status;
+    if (currentStatus === 'listening') {
+      if (!hasAnnouncedReady) {
+        hasAnnouncedReady = true;
+        if (downloadingOccurred) {
+          lastStatusAnnouncement = 'ready';
+          speakDiagnostic('Ready');
+        } else {
+          lastStatusAnnouncement = 'session-opening';
+          void speakSessionOpening().catch((error: unknown) => {
+            console.error('[Sunny] Session opening failed:', error);
+            errorMessage = error instanceof Error ? error.message : 'Unable to speak the session opening.';
+            status = 'error';
+          });
+        }
+      }
+      return;
+    }
+    if (currentStatus === 'speaking' || currentStatus === 'thinking') return;
+    const announcementKey = `${currentStatus}:${currentStatus === 'downloading' ? downloadingModel : ''}`;
+    if (announcementKey === lastStatusAnnouncement) return;
+    lastStatusAnnouncement = announcementKey;
+    speakDiagnostic(
+      currentStatus === 'downloading'
+        ? `Downloading ${downloadingModel}`
+        : statusLabel,
+    );
+  });
+
+  $effect(() => {
+    const message = errorMessage;
+    if (message) speakDiagnostic(`Error. ${message}`);
+  });
 
   function getRms(data: Float32Array<ArrayBuffer>) {
     let total = 0;
@@ -150,7 +204,7 @@
     } else if (status === 'thinking') {
       intensity += (0.32 - intensity) * 0.08;
     }
-    if (status !== 'ended' && status !== 'paused' && status !== 'error') {
+    if (typeof window !== 'undefined' && status !== 'ended' && status !== 'paused' && status !== 'error') {
       animationFrame = requestAnimationFrame(animateAudio);
     }
   }
@@ -201,7 +255,9 @@
     if (modelPreparation) return modelPreparation;
     modelPreparation = (async () => {
       isDownloading = true;
+      status = 'downloading';
       try {
+        await loadSystemPrompt();
         await preparePiperModel();
         await prepareTransformersModel('Transcription', TRANSCRIPTION_MODEL);
         await prepareWebLLMModel(LLM_MODEL);
@@ -213,13 +269,49 @@
         console.error('[Sunny] Model preparation failed:', error);
         downloadStatus = 'Model download failed — check the console';
         isDownloading = false;
+        status = 'error';
         throw error;
       }
     })();
     return modelPreparation;
   }
 
+  async function loadSystemPrompt() {
+    console.log('[Sunny] Loading system prompt from /api/prompt/');
+    const isLocalhost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const response = await fetch('/api/prompt/', {
+      cache: isLocalhost ? 'no-store' : 'default',
+    });
+    if (!response.ok) {
+      throw new Error(`System prompt request failed: ${response.status} ${response.statusText}`);
+    }
+    const prompt = (await response.text()).trim();
+    if (!prompt) throw new Error('System prompt endpoint returned an empty response.');
+    systemPrompt = prompt;
+    console.log('[Sunny] System prompt loaded:', { characterCount: prompt.length });
+  }
+
+  async function speakSessionOpening() {
+    const openingMarker = 'Session Opening Script (';
+    const closingMarker = 'Session Closing (After Story Consolidation)';
+    const openingStart = systemPrompt.indexOf(openingMarker);
+    const closingStart = systemPrompt.indexOf(closingMarker);
+    if (openingStart < 0 || closingStart <= openingStart) {
+      console.warn('[Sunny] System prompt has no session opening script; continuing without an opening announcement');
+      return;
+    }
+    const opening = systemPrompt
+      .slice(openingStart + openingMarker.length, closingStart)
+      .trim()
+      .replace(/^"|"$/g, '');
+    console.log('[Sunny] Speaking session opening script');
+    await speak(opening);
+  }
+
   async function preparePiperModel() {
+    downloadingModel = 'Piper voice model';
     speaker = await TtsSession.create({
       voiceId: PIPER_VOICE,
       allowLocalModels: true,
@@ -240,6 +332,7 @@
       }
 
       console.log('[Sunny] Downloading Piper voice:', PIPER_VOICE);
+      downloadingOccurred = true;
       downloadStatus = 'Downloading Speech model: 0%';
       downloadProgress = 0;
       await downloadPiperVoice(PIPER_VOICE, (progress) => {
@@ -259,6 +352,7 @@
     modelId: string,
     settings?: { device?: 'webgpu' | 'wasm'; quantized?: boolean; ensureRuntimeFiles?: boolean },
   ) {
+    downloadingModel = `${label} model`;
     if (!settings?.ensureRuntimeFiles && (await isTransformersModelCached(modelId))) {
       console.log(`[Sunny] ${label} model already cached:`, modelId);
       downloadStatus = `${label} model ready (cached)`;
@@ -266,6 +360,7 @@
       return;
     }
     console.log(`[Sunny] Starting ${label} model download:`, modelId);
+    downloadingOccurred = true;
     downloadStatus = `Downloading ${label} model: 0%`;
     downloadProgress = 0;
     await preloadTransformersModel(modelId, {
@@ -280,6 +375,7 @@
   }
 
   async function prepareWebLLMModel(modelId: string) {
+    downloadingModel = 'language model';
     if (await isWebLLMModelCached(modelId)) {
       console.log('[Sunny] WebLLM model already cached:', modelId);
       downloadProgress = 100;
@@ -287,6 +383,7 @@
       return;
     }
     console.log('[Sunny] Starting WebLLM model download:', modelId);
+    downloadingOccurred = true;
     downloadStatus = 'Downloading LLM model: 0%';
     downloadProgress = 0;
     await preloadWebLLMModel(modelId, {
@@ -334,6 +431,10 @@
     return new Blob([buffer], { type: 'audio/wav' });
   }
 
+  function limitResponseWords(text: string) {
+    return text.trim().split(/\s+/).slice(0, MAX_RESPONSE_WORDS).join(' ');
+  }
+
   async function handleSpeech(audioData: Float32Array, sampleRate: number) {
     if (processing || !conversationActive || status === 'ended') {
       console.debug('[Sunny] Audio segment ignored:', {
@@ -352,7 +453,7 @@
     console.log('[Sunny] Listening paused while processing the response');
     processing = true;
     status = 'thinking';
-    cancelAnimationFrame(animationFrame);
+    if (typeof window !== 'undefined') cancelAnimationFrame(animationFrame);
     try {
       console.log('[Sunny] Loading/using Moonshine STT model:', TRANSCRIPTION_MODEL);
       console.debug('[Sunny] Starting transcription:', {
@@ -387,16 +488,17 @@
         return;
       }
 
-      const prompt = `${SYSTEM_PROMPT}\n\nUser: ${text}`;
+      const prompt = `${systemPrompt}\n\nKeep every response to no more than ${MAX_RESPONSE_WORDS} words.\n\nUser: ${text}`;
       console.log('[Sunny] LLM request:', { prompt });
       console.log('[Sunny] Loading/using WebLLM model:', LLM_MODEL);
       const response = await streamText({
         model: llm,
         prompt,
-        maxTokens: 48,
+        maxTokens: 64,
       });
       let reply = '';
       for await (const chunk of response.stream) reply += chunk.text;
+      reply = limitResponseWords(reply);
       console.log('[Sunny] WebLLM model ready');
       console.log('[Sunny] LLM response:', { text: reply });
       await speak(reply);
@@ -437,6 +539,7 @@
     });
     const url = URL.createObjectURL(audio);
     outputAudio = new Audio(url);
+    outputAudio.playbackRate = 0.9;
     outputContext = new AudioContext();
     outputAnalyser = outputContext.createAnalyser();
     outputAnalyser.fftSize = 512;
@@ -502,7 +605,7 @@
     outputAudio?.pause();
     if (outputAudio) outputAudio.onended = null;
     void inputContext?.suspend();
-    cancelAnimationFrame(animationFrame);
+    if (typeof window !== 'undefined') cancelAnimationFrame(animationFrame);
     intensity = 0.18;
   }
 
@@ -532,6 +635,7 @@
 
 <main class="session-main">
   <p class="eyebrow">{statusLabel}</p>
+  <p class="session-instructions">{errorMessage || lastUtterance || ''}</p>
   {#if isDownloading && downloadProgress < 100}
     <div class="download-status" aria-live="polite">
       <span class="download-label">{downloadStatus}</span>
@@ -541,15 +645,15 @@
     </div>
   {/if}
   <Sparkle intensity={status === 'ended' ? 0 : intensity} isPlaying={status !== 'ended' && status !== 'paused'} />
-  <p class="volume-status">
+  <!-- <p class="volume-status">
     Mic volume {Math.round(inputVolume * 100)}% · silence threshold {Math.round(SILENCE_THRESHOLD * 100)}%
-  </p>
+  </p> -->
 </main>
 
 <footer class="session-footer">
   <div class="prompt">
-    <span class="prompt-kicker">{lastUtterance || 'Take a breath...'}</span>
-    <span class="prompt-title">{errorMessage || 'Let’s do this!'}</span>
+    <span class="prompt-kicker">{'Take a breath...'}</span>
+    <span class="prompt-title">{'Let’s do this!'}</span>
   </div>
   <AudioControls bind:isPlaying={conversationActive} onToggle={toggleConversation} />
 </footer>

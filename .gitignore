@@ -1,5 +1,7 @@
 node_modules
 dist
+.svelte-kit
+.netlify
 .DS_Store
 .env
 .env.*
