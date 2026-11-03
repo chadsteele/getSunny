@@ -2,14 +2,20 @@
   import { onMount } from 'svelte';
   import { recordAudio } from 'vad-web';
   import { streamText, synthesizeSpeech, transcribe } from '@localmode/core';
-  import { isModelCached as isTransformersModelCached, preloadModel as preloadTransformersModel, transformers } from '@localmode/transformers';
+  import {
+    isModelCached as isTransformersModelCached,
+    isWebGPUAvailable,
+    preloadModel as preloadTransformersModel,
+    transformers,
+  } from '@localmode/transformers';
   import { isModelCached as isWebLLMModelCached, preloadModel as preloadWebLLMModel, webllm } from '@localmode/webllm';
   import AudioControls from './AudioControls.svelte';
   import Sparkle from './Sparkle.svelte';
 
   type Status = 'listening' | 'thinking' | 'speaking' | 'paused' | 'ended' | 'error';
 
-  const SYSTEM_PROMPT = 'You are Sunny, a helpful voice assistant. Keep responses brief and conversational.';
+  const SYSTEM_PROMPT =
+    'You are Sunny, a helpful voice assistant. Answer in one or two short conversational sentences, no more than 35 words.';
   const TRANSCRIPTION_MODEL = 'onnx-community/moonshine-tiny-ONNX';
   const LLM_MODEL = 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC';
   const SPEECH_MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX';
@@ -33,6 +39,7 @@
   let outputAnalyser: AnalyserNode | undefined;
   let outputData: Float32Array<ArrayBuffer> | undefined;
   let outputAudio: HTMLAudioElement | undefined;
+  let finishPlayback: (() => void) | undefined;
   let animationFrame = 0;
   let processing = false;
   let speechStartedAt = 0;
@@ -41,9 +48,21 @@
   let speechEndTimer: ReturnType<typeof setTimeout> | undefined;
   let latestSpeechAudio: Float32Array | undefined;
   let latestSpeechSampleRate = 16_000;
+  let flushedSpeechAudio: Float32Array | undefined;
+  let flushedSpeechSampleRate = 16_000;
+  let startingConversation = false;
+  let animationFrameCount = 0;
+  let lastMicDebugAt = 0;
+  let manualSpeechStartedAt = 0;
+  let manualSilenceStartedAt = 0;
+  let manualSpeechSamples: number[] = [];
+  let lastManualCaptureAt = 0;
   let llm = webllm.languageModel(LLM_MODEL);
   let transcriber = transformers.speechToText(TRANSCRIPTION_MODEL);
-  let speaker = transformers.textToSpeech(SPEECH_MODEL);
+  let speaker = transformers.textToSpeech(SPEECH_MODEL, {
+    device: 'auto',
+    quantized: true,
+  });
   let modelPreparation: Promise<void> | undefined;
   const loggedProgress = new Map<string, number>();
 
@@ -68,21 +87,89 @@
   }
 
   function animateAudio() {
+    animationFrameCount += 1;
+    if (animationFrameCount <= 3) {
+      console.log('[Sunny] Audio animation loop tick:', {
+        frame: animationFrameCount,
+        status,
+        hasInputAnalyser: Boolean(inputAnalyser),
+        hasInputData: Boolean(inputData),
+      });
+    }
     const analyser = status === 'speaking' ? outputAnalyser : inputAnalyser;
     const data = status === 'speaking' ? outputData : inputData;
     if (analyser && data) {
       analyser.getFloatTimeDomainData(data);
       const volume = Math.min(1, getRms(data) * 7);
       if (analyser === inputAnalyser) inputVolume = volume;
+      const now = performance.now();
+      if (analyser === inputAnalyser && now - lastMicDebugAt > 1000) {
+        console.log('[Sunny] Mic analyser sample:', {
+          volumePercent: Math.round(volume * 100),
+          thresholdPercent: Math.round(SILENCE_THRESHOLD * 100),
+          contextState: inputContext?.state,
+          trackState: inputStream?.getAudioTracks().map((track) => track.readyState),
+        });
+        lastMicDebugAt = now;
+      }
+      if (analyser === inputAnalyser && status === 'listening' && !processing) {
+        const sampleRate = inputContext?.sampleRate ?? 16_000;
+        const captureInterval = (data.length / sampleRate) * 1000;
+        if (volume >= SILENCE_THRESHOLD) {
+          if (!manualSpeechStartedAt) {
+            manualSpeechStartedAt = now;
+            manualSpeechSamples = [];
+            console.log('[Sunny] Mic fallback speech started:', {
+              volumePercent: Math.round(volume * 100),
+              thresholdPercent: Math.round(SILENCE_THRESHOLD * 100),
+            });
+          }
+          manualSilenceStartedAt = 0;
+        } else if (manualSpeechStartedAt) {
+          if (!manualSilenceStartedAt) {
+            manualSilenceStartedAt = now;
+            console.debug('[Sunny] Mic fallback silence timer armed');
+          }
+        }
+        if (manualSpeechStartedAt && now - lastManualCaptureAt >= captureInterval) {
+          manualSpeechSamples.push(...data);
+          lastManualCaptureAt = now;
+        }
+        if (manualSpeechStartedAt && manualSilenceStartedAt && now - manualSilenceStartedAt > 1000) {
+          const audio = new Float32Array(manualSpeechSamples);
+          manualSpeechStartedAt = 0;
+          manualSilenceStartedAt = 0;
+          manualSpeechSamples = [];
+          lastManualCaptureAt = 0;
+          if (audio.length > data.length) {
+            console.log('[Sunny] Mic fallback speech ended; starting transcription:', {
+              samples: audio.length,
+              sampleRate,
+              durationSeconds: audio.length / sampleRate,
+            });
+            void handleSpeech(audio, sampleRate);
+          } else {
+            console.warn('[Sunny] Mic fallback discarded a segment that was too short:', audio.length);
+          }
+        }
+      }
       const target = 0.18 + volume * 0.82;
       intensity += (target - intensity) * (volume > intensity ? 0.45 : 0.12);
       if (status === 'listening' && speechStartedAt && !processing) {
         if (volume < SILENCE_THRESHOLD) {
-          silenceStartedAt ||= performance.now();
+          if (!silenceStartedAt) {
+            silenceStartedAt = performance.now();
+            console.debug('[Sunny] Silence timer armed:', {
+              volumePercent: Math.round(volume * 100),
+              thresholdPercent: Math.round(SILENCE_THRESHOLD * 100),
+            });
+          }
           if (performance.now() - silenceStartedAt > 1000) {
+            console.debug('[Sunny] Silence timer elapsed; requesting VAD flush');
             void forceSpeechEnd();
           }
         } else {
+          if (silenceStartedAt) console.debug('[Sunny] Silence timer reset by microphone activity');
           silenceStartedAt = 0;
         }
       }
@@ -95,9 +182,17 @@
   }
 
   async function forceSpeechEnd() {
-    if (forcingSpeechEnd || !disposeVad) return;
+    if (forcingSpeechEnd) {
+      console.debug('[Sunny] VAD flush skipped: flush already in progress');
+      return;
+    }
+    if (!disposeVad) {
+      console.warn('[Sunny] VAD flush skipped: no disposer is available');
+      return;
+    }
     forcingSpeechEnd = true;
-    console.warn('[Sunny] RMS fallback ending speech after sustained silence');
+    console.warn('[Sunny] RMS fallback ending speech after sustained silence; disposing VAD');
+    flushedSpeechAudio = undefined;
     const pendingAudio = latestSpeechAudio;
     const pendingSampleRate = latestSpeechSampleRate;
     console.debug('[Sunny] Cached speech segment:', {
@@ -108,11 +203,15 @@
     disposeVad = undefined;
     speechStartedAt = 0;
     silenceStartedAt = 0;
+    console.debug('[Sunny] Awaiting VAD disposal');
     await dispose();
+    console.debug('[Sunny] VAD disposal complete');
     forcingSpeechEnd = false;
-    if (pendingAudio && conversationActive && status !== 'ended') {
+    const audioToTranscribe = flushedSpeechAudio ?? pendingAudio;
+    const sampleRateToTranscribe = flushedSpeechAudio ? flushedSpeechSampleRate : pendingSampleRate;
+    if (audioToTranscribe && conversationActive && status !== 'ended') {
       console.log('[Sunny] Transcribing cached VAD audio after silence fallback');
-      await handleSpeech(pendingAudio, pendingSampleRate);
+      await handleSpeech(audioToTranscribe, sampleRateToTranscribe);
       return;
     }
     if (conversationActive && !processing && status !== 'ended') {
@@ -127,18 +226,39 @@
   async function setupInputAnalyser() {
     const activeTracks = inputStream?.getAudioTracks().some((track) => track.readyState === 'live');
     if (inputAnalyser && inputContext && inputContext.state !== 'closed' && activeTracks) {
+      console.debug('[Sunny] Reusing microphone analyser:', {
+        contextState: inputContext.state,
+        trackState: inputStream?.getAudioTracks().map((track) => track.readyState),
+      });
       await inputContext.resume();
+      console.debug('[Sunny] Microphone analyser resumed:', inputContext.state);
       return;
     }
     if (inputContext && inputContext.state !== 'closed') await inputContext.close();
     inputAnalyser = undefined;
     inputData = undefined;
+    console.log('[Sunny] Requesting microphone access for sparkle analyser');
     inputStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    inputContext = new AudioContext();
+    console.log('[Sunny] Sparkle microphone stream acquired:', {
+      tracks: inputStream.getAudioTracks().map((track) => ({
+        label: track.label,
+        enabled: track.enabled,
+        muted: track.muted,
+        readyState: track.readyState,
+        settings: track.getSettings(),
+      })),
+    });
+    inputContext = new AudioContext({ sampleRate: 16_000 });
+    console.log('[Sunny] Sparkle microphone AudioContext created:', inputContext.state);
+    await inputContext.resume();
     inputAnalyser = inputContext.createAnalyser();
     inputAnalyser.fftSize = 512;
     inputData = new Float32Array(inputAnalyser.fftSize);
     inputContext.createMediaStreamSource(inputStream).connect(inputAnalyser);
+    console.log('[Sunny] Sparkle microphone analyser connected:', {
+      contextState: inputContext.state,
+      fftSize: inputAnalyser.fftSize,
+    });
     animateAudio();
   }
 
@@ -147,7 +267,13 @@
     modelPreparation = (async () => {
       isDownloading = true;
       try {
-        await prepareTransformersModel('Speech', SPEECH_MODEL);
+        const speechDevice = (await isWebGPUAvailable()) ? 'webgpu' : 'wasm';
+        console.log('[Sunny] Kokoro runtime:', { device: speechDevice, quantized: true });
+        await prepareTransformersModel('Speech', SPEECH_MODEL, {
+          device: speechDevice,
+          quantized: true,
+          ensureRuntimeFiles: true,
+        });
         await prepareTransformersModel('Transcription', TRANSCRIPTION_MODEL);
         await prepareWebLLMModel(LLM_MODEL);
         downloadStatus = 'Models ready — you can talk';
@@ -163,8 +289,12 @@
     return modelPreparation;
   }
 
-  async function prepareTransformersModel(label: string, modelId: string) {
-    if (await isTransformersModelCached(modelId)) {
+  async function prepareTransformersModel(
+    label: string,
+    modelId: string,
+    settings?: { device?: 'webgpu' | 'wasm'; quantized?: boolean; ensureRuntimeFiles?: boolean },
+  ) {
+    if (!settings?.ensureRuntimeFiles && (await isTransformersModelCached(modelId))) {
       console.log(`[Sunny] ${label} model already cached:`, modelId);
       downloadStatus = `${label} model ready (cached)`;
       downloadProgress = 100;
@@ -174,6 +304,8 @@
     downloadStatus = `Downloading ${label} model: 0%`;
     downloadProgress = 0;
     await preloadTransformersModel(modelId, {
+      device: settings?.device,
+      quantized: settings?.quantized,
       onProgress: (progress) => {
         updateDownloadProgress(label, progress.progress ?? 0);
       },
@@ -238,13 +370,24 @@
   }
 
   async function handleSpeech(audioData: Float32Array, sampleRate: number) {
-    if (processing || !conversationActive || status === 'ended') return;
+    if (processing || !conversationActive || status === 'ended') {
+      console.debug('[Sunny] Audio segment ignored:', {
+        processing,
+        conversationActive,
+        status,
+        samples: audioData.length,
+      });
+      return;
+    }
     console.log('[Sunny] VAD audio segment received:', {
       samples: audioData.length,
       sampleRate,
       durationSeconds: audioData.length / sampleRate,
     });
-    console.log('[Sunny] Kokoro TTS model ready');
+    const activeVad = disposeVad;
+    disposeVad = undefined;
+    activeVad?.();
+    console.log('[Sunny] Listening paused while processing the response');
     processing = true;
     status = 'thinking';
     cancelAnimationFrame(animationFrame);
@@ -255,15 +398,19 @@
         samples: audioData.length,
         durationSeconds: audioData.length / sampleRate,
       });
+      console.time('[Sunny] Moonshine transcription');
       const transcription = await transcribe({
         model: transcriber,
         audio: makeWav(audioData, sampleRate),
       });
+      console.timeEnd('[Sunny] Moonshine transcription');
+      console.log('[Sunny] Moonshine transcription result:', transcription);
       console.log('[Sunny] Moonshine STT model ready');
       const text = transcription.text.trim();
       lastUtterance = text;
-      console.log('[Sunny] Transcription:', {
-        text,
+      console.log('[Sunny] Transcribed text:', JSON.stringify(text));
+      console.log('[Sunny] Transcription details:', {
+        characterCount: text.length,
         sampleRate,
         durationSeconds: audioData.length / sampleRate,
       });
@@ -271,8 +418,6 @@
         console.log('Goodbye from Sunny.');
         status = 'ended';
         conversationActive = false;
-        disposeVad?.();
-        disposeVad = undefined;
         return;
       }
 
@@ -282,7 +427,7 @@
       const response = await streamText({
         model: llm,
         prompt,
-        maxTokens: 120,
+        maxTokens: 48,
       });
       let reply = '';
       for await (const chunk of response.stream) reply += chunk.text;
@@ -313,12 +458,23 @@
   async function speak(text: string) {
     console.log('[Sunny] TTS request:', { text });
     console.log('[Sunny] Loading/using Kokoro TTS model:', SPEECH_MODEL);
-    const { audio, sampleRate } = await synthesizeSpeech({
+    status = 'speaking';
+    console.log('[Sunny] Input listening disabled during TTS synthesis');
+    console.time('[Sunny] Kokoro synthesis');
+    const synthesis = await synthesizeSpeech({
       model: speaker,
       text,
       voice: 'af_heart',
       speed: 1,
     });
+    console.timeEnd('[Sunny] Kokoro synthesis');
+    console.log('[Sunny] Kokoro synthesis complete:', {
+      characterCount: synthesis.usage.characterCount,
+      durationMs: synthesis.usage.durationMs,
+      sampleRate: synthesis.sampleRate,
+      audioBytes: synthesis.audio.size,
+    });
+    const { audio, sampleRate } = synthesis;
     const wav = audio instanceof Blob ? audio : makeWav(audio, sampleRate);
     const url = URL.createObjectURL(wav);
     outputAudio = new Audio(url);
@@ -336,20 +492,36 @@
       outputAnalyser = undefined;
       outputData = undefined;
       status = conversationActive ? 'listening' : 'paused';
+      const resolvePlayback = finishPlayback;
+      finishPlayback = undefined;
+      resolvePlayback?.();
       if (conversationActive) animateAudio();
     };
-    status = 'speaking';
     animateAudio();
+    const playbackComplete = new Promise<void>((resolve) => {
+      finishPlayback = resolve;
+    });
+    console.log('[Sunny] Starting TTS playback');
     await outputAudio.play();
+    console.log('[Sunny] TTS playback started');
+    await playbackComplete;
+    console.log('[Sunny] TTS playback finished; response processing complete');
   }
 
   async function startConversation() {
+    if (startingConversation) {
+      console.warn('[Sunny] Conversation start skipped: startup already in progress');
+      return;
+    }
+    startingConversation = true;
     console.log('[Sunny] Starting conversation and VAD; vad-web will initialize Silero in its worker');
     errorMessage = '';
     conversationActive = true;
     status = 'listening';
-    await setupInputAnalyser();
-    disposeVad = await recordAudio({
+    try {
+      await setupInputAnalyser();
+      console.log('[Sunny] Sparkle analyser ready; starting vad-web recorder');
+      disposeVad = await recordAudio({
       onSpeechStart: () => {
         console.log('[Sunny] VAD speech started');
         if (speechEndTimer) clearTimeout(speechEndTimer);
@@ -364,6 +536,11 @@
         silenceStartedAt = 0;
         if (conversationActive && !processing) status = 'thinking';
         speechEndTimer = setTimeout(() => {
+          console.debug('[Sunny] VAD end grace timer fired:', {
+            processing,
+            hasDisposer: Boolean(disposeVad),
+            hasLatestAudio: Boolean(latestSpeechAudio),
+          });
           if (conversationActive && !processing && disposeVad) {
             console.warn('[Sunny] VAD did not deliver audio after speech ended; flushing recorder');
             void forceSpeechEnd();
@@ -380,22 +557,45 @@
       onSpeechAvailable: ({ audioData, sampleRate }) => {
         if (speechEndTimer) clearTimeout(speechEndTimer);
         if (forcingSpeechEnd) {
-          console.log('[Sunny] Ignoring duplicate VAD audio while flushing cached audio');
+          flushedSpeechAudio = audioData.slice();
+          flushedSpeechSampleRate = sampleRate;
+          console.log('[Sunny] Captured final VAD audio during silence flush:', {
+            samples: audioData.length,
+            sampleRate,
+            durationSeconds: audioData.length / sampleRate,
+          });
           return;
         }
-        console.log('[Sunny] VAD delivered audio segment');
+        console.log('[Sunny] VAD delivered audio segment:', {
+          samples: audioData.length,
+          sampleRate,
+          durationSeconds: audioData.length / sampleRate,
+        });
         void handleSpeech(audioData, sampleRate);
       },
-    });
-    console.log('[Sunny] VAD recorder is ready; Silero worker initialization has started');
-    animateAudio();
+      });
+      console.log('[Sunny] VAD recorder is ready; Silero worker initialization has started');
+      animateAudio();
+    } catch (error) {
+      console.error('[Sunny] Conversation startup failed:', error);
+      throw error;
+    } finally {
+      startingConversation = false;
+    }
   }
 
   function stopConversation(nextStatus: Status = 'paused') {
     conversationActive = false;
     status = nextStatus;
+    manualSpeechStartedAt = 0;
+    manualSilenceStartedAt = 0;
+    manualSpeechSamples = [];
+    lastManualCaptureAt = 0;
     disposeVad?.();
     disposeVad = undefined;
+    const resolvePlayback = finishPlayback;
+    finishPlayback = undefined;
+    resolvePlayback?.();
     outputAudio?.pause();
     if (outputAudio) outputAudio.onended = null;
     void inputContext?.suspend();
