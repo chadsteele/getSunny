@@ -3,6 +3,7 @@
 
   export let isPlaying = false;
   export let intensity = 0.18;
+  export let onToggle: (() => void | Promise<void>) | undefined;
 
   let audioElement: HTMLAudioElement;
   let fileInput: HTMLInputElement;
@@ -74,6 +75,14 @@
     animate();
   }
 
+  async function handleToggle() {
+    if (onToggle) {
+      await onToggle();
+      return;
+    }
+    await toggle();
+  }
+
   function handleFile(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
@@ -97,7 +106,7 @@
 <input bind:this={fileInput} class="visually-hidden" type="file" accept="audio/*" on:change={handleFile} />
 <audio bind:this={audioElement} class="visually-hidden" src={sourceUrl}></audio>
 
-<button class:playing={isPlaying} class="play-button" type="button" aria-label={isPlaying ? 'Pause sound' : 'Play sound'} on:click={toggle}>
+<button class:playing={isPlaying} class="play-button" type="button" aria-label={isPlaying ? 'Pause sound' : 'Play sound'} on:click={handleToggle}>
   {#if isPlaying}
     <span class="pause-icon"><i></i><i></i></span>
   {:else}

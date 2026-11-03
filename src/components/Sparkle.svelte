@@ -2,8 +2,8 @@
   export let intensity = 0.18;
   export let isPlaying = false;
 
-  $: scale = 0.86 + intensity * 0.34;
-  $: glow = 0.52 + intensity * 0.48;
+  $: scale = 0.06 + intensity * 0.94;
+  $: glow = 0.02 + intensity * 0.78;
 </script>
 
 <div class:active={isPlaying} class="sparkle-stage" style={`--spark-scale: ${scale}; --spark-glow: ${glow}`}>

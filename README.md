@@ -2,11 +2,19 @@
 
 A tiny Svelte experience inspired by the supplied mobile reference. The central sparkle responds to live frequency data from either the built-in ambient tone or an audio file selected by the user.
 
+The app also includes a fully local voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). It uses Silero VAD, Moonshine STT, a local WebLLM response, and Kokoro TTS. The existing [`Sparkle.svelte`](./src/components/Sparkle.svelte) and [`AudioControls.svelte`](./src/components/AudioControls.svelte) components remain the visual sparkle and pause/resume control.
+
 ## Local development
 
 ```bash
 npm install
 npm run dev
+```
+
+The voice loop requires microphone permission and downloads local model files on first use. The required packages are:
+
+```bash
+npm install vad-web @localmode/core @localmode/transformers @localmode/webllm
 ```
 
 The app is mobile-first and becomes a framed phone layout on larger screens.
