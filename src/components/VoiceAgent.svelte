@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { readAudio, recordAudio } from 'vad-web';
+  import { recordAudio } from 'vad-web';
   import { streamText, synthesizeSpeech, transcribe } from '@localmode/core';
   import { isModelCached as isTransformersModelCached, preloadModel as preloadTransformersModel, transformers } from '@localmode/transformers';
   import { isModelCached as isWebLLMModelCached, preloadModel as preloadWebLLMModel, webllm } from '@localmode/webllm';
@@ -148,7 +148,6 @@
       isDownloading = true;
       try {
         await prepareTransformersModel('Speech', SPEECH_MODEL);
-        await prepareVadWorker();
         await prepareTransformersModel('Transcription', TRANSCRIPTION_MODEL);
         await prepareWebLLMModel(LLM_MODEL);
         downloadStatus = 'Models ready — you can talk';
@@ -200,21 +199,6 @@
     });
     updateDownloadProgress('LLM', 100);
     console.log('[Sunny] WebLLM model download complete:', modelId);
-  }
-
-  async function prepareVadWorker() {
-    console.log('[Sunny] Starting Voice detection model warm-up through vad-web');
-    downloadStatus = 'Preparing Voice detection model: 0%';
-    downloadProgress = 0;
-    const silentAudio = makeWav(new Float32Array(16_000), 16_000);
-    const dispose = await readAudio({
-      audioData: await silentAudio.arrayBuffer(),
-    });
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    await dispose();
-    downloadProgress = 100;
-    downloadStatus = 'Voice detection model ready';
-    console.log('[Sunny] Voice detection model loaded and cached by vad-web');
   }
 
   function updateDownloadProgress(label: string, progress: number) {
@@ -360,6 +344,7 @@
   }
 
   async function startConversation() {
+    console.log('[Sunny] Starting conversation and VAD; vad-web will initialize Silero in its worker');
     errorMessage = '';
     conversationActive = true;
     status = 'listening';
@@ -402,7 +387,7 @@
         void handleSpeech(audioData, sampleRate);
       },
     });
-    console.log('[Sunny] VAD recorder is ready; Silero model was preloaded and cached');
+    console.log('[Sunny] VAD recorder is ready; Silero worker initialization has started');
     animateAudio();
   }
 
