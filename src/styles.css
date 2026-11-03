@@ -21,7 +21,7 @@ button { font: inherit; }
   background: radial-gradient(circle at 50% 46%, #110b02 0, #050403 26%, #020202 58%);
 }
 
-.phone-content { min-height: 100%; padding: 28px 30px 32px; position: relative; z-index: 1; display: flex; flex-direction: column; }
+.phone-content { min-height: 100%; min-width: 0; padding: 28px 30px 32px; position: relative; z-index: 1; display: flex; flex-direction: column; }
 .topbar { display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 3; }
 .menu-button { width: 44px; height: 44px; border: 0; background: transparent; padding: 9px 5px; cursor: pointer; display: grid; align-content: center; gap: 6px; }
 .menu-button span { display: block; width: 31px; height: 3px; border-radius: 2px; background: #eab44d; box-shadow: 0 0 8px #d8922f; }
@@ -32,9 +32,9 @@ button { font: inherit; }
 .step-dot { display: inline-block; width: 5px; height: 5px; background: #e5a839; border-radius: 50%; margin: 0 0 3px 7px; }
 .menu-popover { position: absolute; top: 76px; left: 29px; z-index: 4; display: grid; gap: 13px; padding: 17px 20px; border: 1px solid #5b3e16; background: #0c0905; border-radius: 12px; box-shadow: 0 15px 40px #000; }
 .menu-popover a { color: #eeb64e; font-size: 13px; text-decoration: none; }
-.session-main { flex: 1; min-height: 430px; position: relative; display: grid; place-items: center; justify-items: center; }
+.session-main { flex: 1; min-width: 0; min-height: 430px; position: relative; display: grid; place-items: center; justify-items: center; }
 .eyebrow { position: absolute; top: 8%; font-size: 11px; text-transform: uppercase; letter-spacing: .22em; color: #96723a; opacity: .8; }
-.sparkle-stage { --size: min(78vw, 350px); width: var(--size); aspect-ratio: 1; position: relative; margin-inline: auto; transform: scale(var(--spark-scale)); transition: transform 160ms ease-out; }
+.sparkle-stage { --size: min(78vw, 350px); width: var(--size); max-width: 100%; aspect-ratio: 1; position: relative; justify-self: center; margin-inline: auto; transform: scale(var(--spark-scale)); transition: transform 160ms ease-out; }
 .sparkle-stage.active { animation: breathe 1.65s ease-in-out infinite; }
 .rays, .spark-core { position: absolute; inset: 0; border-radius: 50%; }
 .rays::before, .rays::after { content: ''; position: absolute; inset: 0; background: repeating-conic-gradient(from 2deg, transparent 0deg 8deg, #f2b83f 8.5deg 9deg, transparent 9.5deg 17deg); mask-image: radial-gradient(circle, black 0 18%, transparent 62%); opacity: .2; }
