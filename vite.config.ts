@@ -26,7 +26,6 @@ export default defineConfig({
       '@localmode/transformers',
       '@realtimex/piper-tts-web',
       'onnxruntime-web',
-      'vad-web',
     ],
   },
 });

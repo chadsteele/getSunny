@@ -22,7 +22,6 @@
     "@localmode/core": "^2.6.0",
     "@localmode/transformers": "^4.2.0",
     "@localmode/webllm": "^2.2.1",
-    "@realtimex/piper-tts-web": "^1.1.1",
-    "vad-web": "^0.7.0"
+    "@realtimex/piper-tts-web": "^1.1.1"
   }
 }
