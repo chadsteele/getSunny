@@ -62,6 +62,7 @@
   let manualSilenceStartedAt = 0;
   let manualSpeechSamples: number[] = [];
   let lastManualCaptureAt = 0;
+  let ignoreVadUntil = 0;
   let llm = webllm.languageModel(LLM_MODEL);
   let transcriber = transformers.speechToText(TRANSCRIPTION_MODEL);
   let speaker: TtsSession | undefined;
@@ -149,6 +150,7 @@
               sampleRate,
               durationSeconds: audio.length / sampleRate,
             });
+            ignoreVadUntil = performance.now() + 5000;
             void handleSpeech(audio, sampleRate);
           } else {
             console.warn('[Sunny] Mic fallback discarded a segment that was too short:', audio.length);
@@ -234,6 +236,9 @@
       });
       await inputContext.resume();
       console.debug('[Sunny] Microphone analyser resumed:', inputContext.state);
+      inputVolume = 0;
+      intensity = 0.18;
+      animateAudio();
       return;
     }
     if (inputContext && inputContext.state !== 'closed') await inputContext.close();
@@ -470,6 +475,8 @@
       console.log('[Sunny] WebLLM model ready');
       console.log('[Sunny] LLM response:', { text: reply });
       await speak(reply);
+      // await speak(reply, false);
+      // if (conversationActive) await speak("Okay. I'm listening");
     } catch (error) {
       console.error('Voice conversation failed:', error);
       console.error('[Sunny] Pipeline state at failure:', {
@@ -491,7 +498,7 @@
     }
   }
 
-  async function speak(text: string) {
+  async function speak(text: string, resumeListening = true) {
     console.log('[Sunny] TTS request:', { text });
     console.log('[Sunny] Loading/using Piper TTS model:', PIPER_VOICE);
     status = 'speaking';
@@ -519,11 +526,11 @@
       outputContext = undefined;
       outputAnalyser = undefined;
       outputData = undefined;
-      status = conversationActive ? 'listening' : 'paused';
+      status = resumeListening && conversationActive ? 'listening' : conversationActive ? 'speaking' : 'paused';
       const resolvePlayback = finishPlayback;
       finishPlayback = undefined;
       resolvePlayback?.();
-      if (conversationActive) animateAudio();
+      if (conversationActive && resumeListening) animateAudio();
     };
     animateAudio();
     const playbackComplete = new Promise<void>((resolve) => {
@@ -554,26 +561,9 @@
         console.log('[Sunny] VAD speech started');
         if (speechEndTimer) clearTimeout(speechEndTimer);
         latestSpeechAudio = undefined;
-        speechStartedAt = performance.now();
-        silenceStartedAt = 0;
-        if (conversationActive && !processing) status = 'listening';
       },
       onSpeechEnd: () => {
-        console.log('[Sunny] VAD speech ended; waiting for audio segment');
-        speechStartedAt = 0;
-        silenceStartedAt = 0;
-        if (conversationActive && !processing) status = 'thinking';
-        speechEndTimer = setTimeout(() => {
-          console.debug('[Sunny] VAD end grace timer fired:', {
-            processing,
-            hasDisposer: Boolean(disposeVad),
-            hasLatestAudio: Boolean(latestSpeechAudio),
-          });
-          if (conversationActive && !processing && disposeVad) {
-            console.warn('[Sunny] VAD did not deliver audio after speech ended; flushing recorder');
-            void forceSpeechEnd();
-          }
-        }, 1200);
+        console.log('[Sunny] VAD speech ended; manual microphone detector owns transcription');
       },
       onSpeechOngoing: ({ audioData, sampleRate }) => {
         latestSpeechAudio = audioData.slice();
@@ -584,22 +574,12 @@
       },
       onSpeechAvailable: ({ audioData, sampleRate }) => {
         if (speechEndTimer) clearTimeout(speechEndTimer);
-        if (forcingSpeechEnd) {
-          flushedSpeechAudio = audioData.slice();
-          flushedSpeechSampleRate = sampleRate;
-          console.log('[Sunny] Captured final VAD audio during silence flush:', {
-            samples: audioData.length,
-            sampleRate,
-            durationSeconds: audioData.length / sampleRate,
-          });
-          return;
-        }
-        console.log('[Sunny] VAD delivered audio segment:', {
+        ignoreVadUntil = 0;
+        console.log('[Sunny] Ignoring VAD audio segment; manual microphone detector is authoritative:', {
           samples: audioData.length,
           sampleRate,
           durationSeconds: audioData.length / sampleRate,
         });
-        void handleSpeech(audioData, sampleRate);
       },
       });
       console.log('[Sunny] VAD recorder is ready; Silero worker initialization has started');
