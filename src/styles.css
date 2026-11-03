@@ -9,19 +9,19 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; background: #020202; }
+body { margin: 0; min-width: 320px; min-height: 100svh; background: #020202; }
 button { font: inherit; }
 
 .phone-frame {
+  width: 100%;
   min-height: 100svh;
-  max-width: 500px;
   margin: 0 auto;
   position: relative;
   overflow: hidden;
   background: radial-gradient(circle at 50% 46%, #110b02 0, #050403 26%, #020202 58%);
 }
 
-.phone-content { min-height: 100svh; padding: 28px 30px 32px; position: relative; z-index: 1; display: flex; flex-direction: column; }
+.phone-content { min-height: 100%; padding: 28px 30px 32px; position: relative; z-index: 1; display: flex; flex-direction: column; }
 .topbar { display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 3; }
 .menu-button { width: 44px; height: 44px; border: 0; background: transparent; padding: 9px 5px; cursor: pointer; display: grid; align-content: center; gap: 6px; }
 .menu-button span { display: block; width: 31px; height: 3px; border-radius: 2px; background: #eab44d; box-shadow: 0 0 8px #d8922f; }
@@ -62,9 +62,9 @@ button { font: inherit; }
 .ambient-right { width: 300px; height: 300px; right: -265px; bottom: 4%; }
 @keyframes breathe { 0%, 100% { transform: scale(calc(var(--spark-scale) * .96)); } 50% { transform: scale(calc(var(--spark-scale) * 1.07)); } }
 @media (min-width: 600px) {
-  body { padding: 20px; }
-  .phone-frame { min-height: calc(100svh - 40px); border: 1px solid #4b3b24; border-radius: 54px; box-shadow: 0 0 0 4px #0e0b07, 0 0 0 5px #5b4629, 0 18px 80px #000; }
-  .phone-content { min-height: calc(100svh - 40px); padding: 34px 46px 42px; }
+  body { display: grid; place-items: center; padding: 20px; }
+  .phone-frame { width: min(393px, calc(100vw - 40px)); height: min(852px, calc(100svh - 40px)); min-height: 0; border: 1px solid #4b3b24; border-radius: 54px; box-shadow: 0 0 0 4px #0e0b07, 0 0 0 5px #5b4629, 0 18px 80px #000; }
+  .phone-content { min-height: 100%; padding: 34px 46px 42px; }
   .session-footer { padding: 0 2px; }
   .audio-upload { left: 46px; bottom: 16px; }
 }
