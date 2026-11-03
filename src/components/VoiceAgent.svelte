@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { recordAudio } from 'vad-web';
-  import { streamText, synthesizeSpeech, transcribe } from '@localmode/core';
+  import { streamText, transcribe } from '@localmode/core';
   import {
     isModelCached as isTransformersModelCached,
-    isWebGPUAvailable,
     preloadModel as preloadTransformersModel,
     transformers,
   } from '@localmode/transformers';
   import { isModelCached as isWebLLMModelCached, preloadModel as preloadWebLLMModel, webllm } from '@localmode/webllm';
+  import { download as downloadPiperVoice, stored as storedPiperVoices, TtsSession } from '@realtimex/piper-tts-web';
   import AudioControls from './AudioControls.svelte';
   import Sparkle from './Sparkle.svelte';
 
@@ -18,7 +18,12 @@
     'You are Sunny, a helpful voice assistant. Answer in one or two short conversational sentences, no more than 35 words.';
   const TRANSCRIPTION_MODEL = 'onnx-community/moonshine-tiny-ONNX';
   const LLM_MODEL = 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC';
-  const SPEECH_MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX';
+  const PIPER_VOICE = 'en_US-libritts_r-medium';
+  const PIPER_WASM_PATHS = {
+    onnxWasm: '/piper/onnx/',
+    piperData: '/piper/phonemize/piper_phonemize.data',
+    piperWasm: '/piper/phonemize/piper_phonemize.wasm',
+  };
   const SILENCE_THRESHOLD = 0.08;
 
   let status = $state<Status>('listening');
@@ -59,10 +64,7 @@
   let lastManualCaptureAt = 0;
   let llm = webllm.languageModel(LLM_MODEL);
   let transcriber = transformers.speechToText(TRANSCRIPTION_MODEL);
-  let speaker = transformers.textToSpeech(SPEECH_MODEL, {
-    device: 'auto',
-    quantized: true,
-  });
+  let speaker: TtsSession | undefined;
   let modelPreparation: Promise<void> | undefined;
   const loggedProgress = new Map<string, number>();
 
@@ -267,13 +269,7 @@
     modelPreparation = (async () => {
       isDownloading = true;
       try {
-        const speechDevice = (await isWebGPUAvailable()) ? 'webgpu' : 'wasm';
-        console.log('[Sunny] Kokoro runtime:', { device: speechDevice, quantized: true });
-        await prepareTransformersModel('Speech', SPEECH_MODEL, {
-          device: speechDevice,
-          quantized: true,
-          ensureRuntimeFiles: true,
-        });
+        await preparePiperModel();
         await prepareTransformersModel('Transcription', TRANSCRIPTION_MODEL);
         await prepareWebLLMModel(LLM_MODEL);
         downloadStatus = 'Models ready — you can talk';
@@ -284,9 +280,45 @@
         console.error('[Sunny] Model preparation failed:', error);
         downloadStatus = 'Model download failed — check the console';
         isDownloading = false;
+        throw error;
       }
     })();
     return modelPreparation;
+  }
+
+  async function preparePiperModel() {
+    speaker = await TtsSession.create({
+      voiceId: PIPER_VOICE,
+      allowLocalModels: true,
+      fallbackStrategy: 'local',
+      wasmPaths: PIPER_WASM_PATHS,
+      logger: (message) => console.debug('[Sunny] Piper:', message),
+    });
+    console.log('[Sunny] Piper session ready:', {
+      voice: PIPER_VOICE,
+      localWasmPaths: PIPER_WASM_PATHS,
+    });
+
+    try {
+      const storedVoices = await storedPiperVoices();
+      if (storedVoices.includes(PIPER_VOICE)) {
+        console.log('[Sunny] Piper voice already cached:', PIPER_VOICE);
+        return;
+      }
+
+      console.log('[Sunny] Downloading Piper voice:', PIPER_VOICE);
+      downloadStatus = 'Downloading Speech model: 0%';
+      downloadProgress = 0;
+      await downloadPiperVoice(PIPER_VOICE, (progress) => {
+        const percent = progress.total
+          ? (progress.loaded / progress.total) * 100
+          : 0;
+        updateDownloadProgress('Speech', percent);
+      });
+      console.log('[Sunny] Piper voice download complete:', PIPER_VOICE);
+    } catch (error) {
+      console.warn('[Sunny] Piper voice pre-cache unavailable; using runtime fallback:', error);
+    }
   }
 
   async function prepareTransformersModel(
@@ -414,6 +446,10 @@
         sampleRate,
         durationSeconds: audioData.length / sampleRate,
       });
+      if (!text) {
+        console.log('[Sunny] Empty transcription; skipping LLM and TTS');
+        return;
+      }
       if (text.toLowerCase() === 'good night sunny') {
         console.log('Goodbye from Sunny.');
         status = 'ended';
@@ -457,26 +493,18 @@
 
   async function speak(text: string) {
     console.log('[Sunny] TTS request:', { text });
-    console.log('[Sunny] Loading/using Kokoro TTS model:', SPEECH_MODEL);
+    console.log('[Sunny] Loading/using Piper TTS model:', PIPER_VOICE);
     status = 'speaking';
     console.log('[Sunny] Input listening disabled during TTS synthesis');
-    console.time('[Sunny] Kokoro synthesis');
-    const synthesis = await synthesizeSpeech({
-      model: speaker,
-      text,
-      voice: 'af_heart',
-      speed: 1,
+    if (!speaker) throw new Error('Piper TTS session is not ready.');
+    console.time('[Sunny] Piper synthesis');
+    const audio = await speaker.predict(text);
+    console.timeEnd('[Sunny] Piper synthesis');
+    console.log('[Sunny] Piper synthesis complete:', {
+      characterCount: text.length,
+      audioBytes: audio.size,
     });
-    console.timeEnd('[Sunny] Kokoro synthesis');
-    console.log('[Sunny] Kokoro synthesis complete:', {
-      characterCount: synthesis.usage.characterCount,
-      durationMs: synthesis.usage.durationMs,
-      sampleRate: synthesis.sampleRate,
-      audioBytes: synthesis.audio.size,
-    });
-    const { audio, sampleRate } = synthesis;
-    const wav = audio instanceof Blob ? audio : makeWav(audio, sampleRate);
-    const url = URL.createObjectURL(wav);
+    const url = URL.createObjectURL(audio);
     outputAudio = new Audio(url);
     outputContext = new AudioContext();
     outputAnalyser = outputContext.createAnalyser();

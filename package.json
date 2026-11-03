@@ -14,12 +14,15 @@
     "svelte": "^5.16.0",
     "svelte-check": "^4.1.4",
     "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vite-plugin-static-copy": "^4.1.1"
   },
   "dependencies": {
+    "@diffusionstudio/piper-wasm": "^1.0.0",
     "@localmode/core": "^2.6.0",
     "@localmode/transformers": "^4.2.0",
     "@localmode/webllm": "^2.2.1",
+    "@realtimex/piper-tts-web": "^1.1.1",
     "vad-web": "^0.7.0"
   }
 }
