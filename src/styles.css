@@ -32,7 +32,7 @@ button { font: inherit; }
 .step-dot { display: inline-block; width: 5px; height: 5px; background: #e5a839; border-radius: 50%; margin: 0 0 3px 7px; }
 .menu-popover { position: absolute; top: 76px; left: 29px; z-index: 4; display: grid; gap: 13px; padding: 17px 20px; border: 1px solid #5b3e16; background: #0c0905; border-radius: 12px; box-shadow: 0 15px 40px #000; }
 .menu-popover a { color: #eeb64e; font-size: 13px; text-decoration: none; }
-.session-main { flex: 1; min-width: 0; min-height: 430px; position: relative; display: grid; place-items: center; justify-items: center; }
+.session-main { flex: 1; width: calc(100% + 60px); min-width: 0; min-height: 430px; margin-left: -30px; position: relative; display: grid; place-items: center; justify-items: center; }
 .eyebrow { position: absolute; top: 8%; font-size: 11px; text-transform: uppercase; letter-spacing: .22em; color: #96723a; opacity: .8; }
 .sparkle-stage { --size: min(78vw, 350px); width: var(--size); max-width: 100%; aspect-ratio: 1; position: relative; justify-self: center; margin-inline: auto; transform: scale(var(--spark-scale)); transition: transform 160ms ease-out; }
 .sparkle-stage.active { animation: breathe 1.65s ease-in-out infinite; }
@@ -65,6 +65,7 @@ button { font: inherit; }
   body { display: grid; place-items: center; padding: 20px; }
   .phone-frame { width: min(393px, calc(100vw - 40px)); height: min(852px, calc(100svh - 40px)); min-height: 0; border: 1px solid #4b3b24; border-radius: 54px; box-shadow: 0 0 0 4px #0e0b07, 0 0 0 5px #5b4629, 0 18px 80px #000; }
   .phone-content { min-height: 100%; padding: 34px 46px 42px; }
+  .session-main { width: calc(100% + 92px); margin-left: -46px; }
   .session-footer { padding: 0 2px; }
   .audio-upload { left: 46px; bottom: 16px; }
 }
