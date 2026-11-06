@@ -43,7 +43,7 @@ I am a local AI process running on your device only.  I am not a human. I facili
 
 If you want to hear this again, just ask me to repeat the terms.
 
-If you are over 18 years old, understand the terms, and take full responsibility for how you use this process and want to continue, please tell me your name and what mastering money means to you."
+If you are over 18 years old, understand the terms, and take full responsibility for how you use this process and want to continue, press the play button and then tell me your name and what mastering money means to you."
 
 
 Session Closing (After Story Consolidation)

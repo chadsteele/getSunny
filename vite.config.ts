@@ -28,4 +28,10 @@ export default defineConfig({
       'onnxruntime-web',
     ],
   },
+  server: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+  },
 });

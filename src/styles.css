@@ -74,3 +74,16 @@ button { font: inherit; }
   .session-footer { padding: 0 2px; }
   .audio-upload { left: 46px; bottom: 16px; }
 }
+
+.chat-thread { flex: 1; min-height: 0; width: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 18px 8px 105px; scroll-behavior: smooth; }
+.chat-row { display: flex; justify-content: flex-start; width: 100%; }
+.chat-row.chat-user { justify-content: flex-end; }
+.chat-bubble { max-width: 82%; margin: 0; padding: 11px 14px; border: 1px solid #5b3e16; border-radius: 17px 17px 17px 4px; color: #f3cf82; background: #100b05; font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 5px 16px #0008; }
+.chat-user .chat-bubble { border-color: #9a6a22; border-radius: 17px 17px 4px 17px; color: #fff0bd; background: #33200a; }
+.chat-status .chat-bubble, .chat-typing { border-color: #4b3b24; color: #a98d5c; background: #080705; font-size: 12px; font-style: italic; }
+.chat-empty { margin: auto; color: #8e6e3a; font-size: 13px; text-align: center; }
+.sparkle-overlay { position: absolute; right: 3%; bottom: 4%; z-index: 4; width: 105px; pointer-events: none; }
+.sparkle-overlay .sparkle-stage { --size: 105px; }
+@media (min-width: 600px) { .chat-thread { padding-inline: 14px; } .sparkle-overlay { right: 4%; } }
+
+.session-main { display: flex; flex-direction: column; align-items: stretch; justify-content: stretch; }
