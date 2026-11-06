@@ -27,7 +27,7 @@ export interface LanguageModelController {
   generate: (prompt: string, maxTokens?: number) => Promise<string>;
   generateStreaming: (
     prompt: string,
-    maxTokens: number,
+    maxTokens: number | undefined,
     onChunk: (chunk: string) => void,
   ) => Promise<string>;
 }

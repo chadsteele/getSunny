@@ -118,7 +118,7 @@
 
   export async function generateStreaming(
     prompt: string,
-    maxTokens: number,
+    maxTokens: number | undefined,
     onChunk: (chunk: string) => void,
   ) {
     if (!['webllm', 'huggingface'].includes(config.location) || !model) {
@@ -126,7 +126,7 @@
     }
     console.log('[Sunny] Starting streaming local language generation:', {
       model: config.name,
-      maxTokens,
+      maxTokens: maxTokens ?? 'default',
     });
     const abortController = new AbortController();
     const timeout = setTimeout(() => abortController.abort(), 30_000);
@@ -134,17 +134,19 @@
       const result = await streamText({
         model,
         prompt,
-        maxTokens,
         abortSignal: abortController.signal,
         maxRetries: 0,
         stopSequences: ['\nUser:', '\nSystem:', '\nConversation:'],
         temperature: 0.35,
+        ...(maxTokens === undefined ? {} : { maxTokens }),
       });
       let pending = '';
       let fullText = '';
-      for await (const chunk of result.stream) {
-        pending += chunk.text;
-        fullText += chunk.text;
+      let insideThinking = false;
+
+      const emitVisibleText = (text: string) => {
+        pending += text;
+        fullText += text;
         const sentenceBoundary = /[.!?](?=\s|$)/g;
         let boundary: RegExpExecArray | null;
         let lastBoundary = 0;
@@ -155,8 +157,29 @@
           lastBoundary = end;
         }
         if (lastBoundary > 0) pending = pending.slice(lastBoundary);
+      };
+
+      for await (const chunk of result.stream) {
+        let remaining = chunk.text;
+        while (remaining) {
+          if (insideThinking) {
+            const end = remaining.toLowerCase().indexOf('</think>');
+            if (end < 0) break;
+            remaining = remaining.slice(end + '</think>'.length);
+            insideThinking = false;
+            continue;
+          }
+          const start = remaining.toLowerCase().indexOf('<think>');
+          if (start < 0) {
+            emitVisibleText(remaining);
+            break;
+          }
+          emitVisibleText(remaining.slice(0, start));
+          remaining = remaining.slice(start + '<think>'.length);
+          insideThinking = true;
+        }
       }
-      if (pending.trim()) onChunk(pending.trim());
+      if (!insideThinking && pending.trim()) onChunk(pending.trim());
       if (!fullText.trim()) throw new Error('Local language model returned an empty response.');
       console.log('[Sunny] Streaming local language generation complete:', {
         characterCount: fullText.length,

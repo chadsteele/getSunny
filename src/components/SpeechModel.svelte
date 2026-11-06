@@ -6,6 +6,7 @@
   } from '@realtimex/piper-tts-web';
   import { logger as console } from '../lib/logger';
   import type { ModelConfig } from '../lib/model-config';
+  import { normalizeForSpeech } from '../lib/speech-text';
 
   interface Props {
     config: ModelConfig;
@@ -61,6 +62,11 @@
 
   export async function synthesize(text: string) {
     if (!session) throw new Error('Piper TTS session is not ready.');
-    return session.predict(text);
+    const speechText = normalizeForSpeech(text);
+    console.log('[Sunny] Piper synthesize called:', {
+      originalText: text,
+      speechText,
+    });
+    return session.predict(speechText);
   }
 </script>

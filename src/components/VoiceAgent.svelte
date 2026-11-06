@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import ChatThread from './ChatThread.svelte';
   import AudioControls from './AudioControls.svelte';
   import LanguageModel from './LanguageModel.svelte';
+  import RecordingStatus from './RecordingStatus.svelte';
   import Sparkle from './Sparkle.svelte';
   import SpeechModel from './SpeechModel.svelte';
   import TranscriptionModel from './TranscriptionModel.svelte';
@@ -18,7 +20,6 @@
   type ChatMessage = { id: number; role: ChatRole; content: string };
 
 
-  const MAX_RESPONSE_WORDS = 20;
   const SILENCE_THRESHOLD = 0.08;
   const MAX_RECORDING_MS = 3 * 60 * 1000;
   const SILENCE_END_MS = 10 * 1000;
@@ -27,19 +28,15 @@
   let systemPrompt = '';
   let status = $state<Status>('downloading');
   let intensity = $state(0.18);
+  let sparkleVisible = $state(false);
   let conversationActive = $state(false);
   let modelsReady = $state(false);
   let welcomePlayed = $state(false);
-  let lastUtterance = $state('');
   let chatMessages = $state<ChatMessage[]>([]);
-  let chatThread: HTMLDivElement | undefined;
   let nextMessageId = 0;
   let errorMessage = $state('');
   let downloadStatus = $state('Preparing voice models...');
-  let downloadProgress = $state(0);
-  let isDownloading = $state(true);
   let downloadingModel = $state('voice models');
-  let inputVolume = $state(0);
   let inputStream: MediaStream | undefined;
   let inputContext: AudioContext | undefined;
   let inputAnalyser: AnalyserNode | undefined;
@@ -76,13 +73,6 @@
   const recordingProgress = $derived(Math.min(100, (recordingElapsedMs / MAX_RECORDING_MS) * 100));
   const recordingRemainingMs = $derived(Math.max(0, MAX_RECORDING_MS - recordingElapsedMs));
 
-  function formatDuration(milliseconds: number) {
-    const totalSeconds = Math.ceil(milliseconds / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  }
-
   function addChatMessage(role: ChatRole, content: string) {
     const message = content.trim();
     if (!message) return;
@@ -95,12 +85,6 @@
       .map(({ role, content }) => `${role === 'user' ? 'User' : 'Sunny'}: ${content}`)
       .join('\n\n');
   }
-
-  $effect(() => {
-    const messageCount = chatMessages.length;
-    void messageCount;
-    void tick().then(() => chatThread?.scrollTo({ top: chatThread.scrollHeight, behavior: 'smooth' }));
-  });
 
   const statusLabel = $derived(
     status === 'downloading'
@@ -188,7 +172,6 @@
     if (analyser && data) {
       analyser.getFloatTimeDomainData(data);
       const volume = Math.min(1, getRms(data) * 7);
-      if (analyser === inputAnalyser) inputVolume = volume;
       const now = performance.now();
       if (analyser === inputAnalyser && now - lastMicDebugAt > 1000) {
         console.log('[Sunny] Mic analyser sample:', {
@@ -258,7 +241,6 @@
 
   async function stopInputAnalyser() {
     if (typeof window !== 'undefined') cancelAnimationFrame(animationFrame);
-    inputVolume = 0;
     inputAnalyser = undefined;
     inputData = undefined;
     inputStream?.getTracks().forEach((track) => track.stop());
@@ -276,7 +258,6 @@
       });
       await inputContext.resume();
       console.debug('[Sunny] Microphone analyser resumed:', inputContext.state);
-      inputVolume = 0;
       intensity = 0.18;
       animateAudio();
       return;
@@ -318,7 +299,6 @@
   async function prepareModels() {
     if (modelPreparation) return modelPreparation;
     modelPreparation = (async () => {
-      isDownloading = true;
       status = 'downloading';
       try {
         await loadSystemPrompt();
@@ -329,15 +309,12 @@
         await speechModel.prepare();
         await transcriptionModel.prepare();
         downloadStatus = 'Models ready — you can talk';
-        downloadProgress = 100;
-        isDownloading = false;
         modelsReady = true;
         console.log('[Sunny] Model preparation complete');
         void beginWelcome();
       } catch (error) {
         console.error('[Sunny] Model preparation failed:', error);
         downloadStatus = 'Model download failed — check the console';
-        isDownloading = false;
         status = 'error';
         throw error;
       }
@@ -412,6 +389,7 @@
         'status',
         'The browser blocked automatic audio playback. Press play once to start Sunny.',
       );
+      sparkleVisible = false;
       status = 'paused';
     } finally {
       startingConversation = false;
@@ -423,7 +401,6 @@
     const previous = loggedProgress.get(label) ?? -1;
     if (percent <= previous) return;
     loggedProgress.set(label, percent);
-    downloadProgress = percent;
     downloadStatus = `Downloading ${label} model: ${percent}%`;
     if (percent < 100) addChatMessage('status', downloadStatus);
     console.log(`[Sunny] ${label} download: ${percent}%`);
@@ -467,10 +444,6 @@
       view.setInt16(44 + index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
     }
     return new Blob([buffer], { type: 'audio/wav' });
-  }
-
-  function limitResponseWords(text: string) {
-    return text.trim().split(/\s+/).slice(0, MAX_RESPONSE_WORDS).join(' ');
   }
 
   function keepSessionOpen(reply: string) {
@@ -572,7 +545,6 @@ ${text}`;
       console.log('[Sunny] Transcription result:', transcription);
       const rawText = transcription.text.trim();
       const text = await correctSuspiciousTranscript(rawText);
-      lastUtterance = text;
       console.log('[Sunny] Transcribed text:', {
         raw: rawText,
         corrected: text,
@@ -600,33 +572,40 @@ ${text}`;
 Conversation transcript:
 ${conversationContext()}
 
-Respond to the latest User message only. Do not repeat the system prompt, the session opening, disclosures, or earlier responses. In one or two short sentences, acknowledge the story's tone, then encourage a darker sensory or emotional escalation with one direct question. Keep the response under ${MAX_RESPONSE_WORDS} words.
+Respond to the latest User message only. Output only the final response; never output private reasoning or <think> tags. In one or two short sentences, acknowledge the story's tone, then encourage a darker sensory or emotional escalation with one direct question. Keep the response concise and complete.
 Never end, close, complete, or pause the session yourself. The user ends the session only by saying exactly "good night sunny".
 Assistant response:`;
       console.log('[Sunny] LLM request:', { prompt });
       console.log('[Sunny] Loading/using language model:', config?.models.language.name);
-const ttsQueue = createTtsQueue();
-const generation = languageModel.generateStreaming(prompt, 24, (chunk) => ttsQueue.enqueue(chunk));
-const speech = speakGeneratedChunks(ttsQueue);
-try {
-  const generatedReply = await generation;
-  const reply = keepSessionOpen(limitResponseWords(generatedReply));
-  console.log('[Sunny] Streaming LLM response:', { text: reply });
-  ttsQueue.finish();
-  await speech;
-} catch (error) {
-  ttsQueue.fail(error);
-  await speech.catch(() => undefined);
-  throw error;
-}
-      // await speak(reply, false);
-      // if (conversationActive) await speak("Okay. I'm listening");
+      const ttsQueue = createTtsQueue();
+      let streamedChunkCount = 0;
+      const generation = languageModel.generateStreaming(prompt, undefined, (chunk) => {
+        streamedChunkCount += 1;
+        ttsQueue.enqueue(chunk);
+      });
+      const speech = speakGeneratedChunks(ttsQueue);
+      try {
+        const generatedReply = await generation;
+        const reply = keepSessionOpen(generatedReply.trim());
+        console.log('[Sunny] Streaming LLM response:', { text: reply });
+        if (streamedChunkCount === 0 && reply) {
+          console.log('[Sunny] No streamed TTS chunks received; enqueueing complete response');
+          ttsQueue.enqueue(reply);
+        }
+        ttsQueue.finish();
+        await speech;
+      } catch (error) {
+        ttsQueue.fail(error);
+        await speech.catch(() => undefined);
+        throw error;
+      }
     } catch (error) {
       console.error('Voice conversation failed:', error);
       console.error('[Sunny] Pipeline state at failure:', {
         status,
         conversationActive,
       });
+      sparkleVisible = false;
       errorMessage = error instanceof Error ? error.message : 'Unable to continue the conversation.';
       addChatMessage('status', errorMessage);
       status = 'error';
@@ -711,7 +690,8 @@ try {
     outputAudio.playbackRate = 0.9;
     outputContext = new AudioContext();
     outputAnalyser = outputContext.createAnalyser();
-    outputAnalyser.fftSize = 512;
+    outputAnalyser.fftSize = 256;
+    outputAnalyser.smoothingTimeConstant = 0;
     outputData = new Float32Array(outputAnalyser.fftSize);
     const source = outputContext.createMediaElementSource(outputAudio);
     source.connect(outputAnalyser);
@@ -722,17 +702,18 @@ try {
       outputContext = undefined;
       outputAnalyser = undefined;
       outputData = undefined;
-      status = resumeListening && conversationActive ? 'listening' : conversationActive ? 'speaking' : 'paused';
+      status = resumeListening && conversationActive ? 'listening' : 'speaking';
       const resolvePlayback = finishPlayback;
       finishPlayback = undefined;
       resolvePlayback?.();
       if (conversationActive && resumeListening) animateAudio();
     };
-    animateAudio();
     const playbackComplete = new Promise<void>((resolve) => {
       finishPlayback = resolve;
     });
     console.log('[Sunny] Starting TTS playback');
+    await outputContext.resume();
+    animateAudio();
     await outputAudio.play();
     console.log('[Sunny] TTS playback started');
     await playbackComplete;
@@ -745,6 +726,7 @@ try {
       chunkCount: chunks.length,
       sentenceLimit: 3,
     });
+    sparkleVisible = true;
     status = 'speaking';
     console.log('[Sunny] Input listening disabled during TTS synthesis');
     await stopInputAnalyser();
@@ -760,6 +742,7 @@ try {
   }
 
   async function speakGeneratedChunks(queue: ReturnType<typeof createTtsQueue>) {
+    sparkleVisible = true;
     status = 'speaking';
     console.log('[Sunny] Input listening disabled during streaming TTS');
     await stopInputAnalyser();
@@ -791,6 +774,7 @@ try {
     console.log('[Sunny] Starting conversation and microphone detection');
     errorMessage = '';
     conversationActive = true;
+    sparkleVisible = true;
     status = 'listening';
     recordingStartedAt ??= Date.now();
     recordingElapsedMs = Date.now() - recordingStartedAt;
@@ -819,6 +803,7 @@ try {
 
   function stopConversation(nextStatus: Status = 'paused') {
     conversationActive = false;
+    sparkleVisible = false;
     status = nextStatus;
     manualSpeechStartedAt = 0;
     manualSilenceStartedAt = 0;
@@ -903,43 +888,17 @@ try {
 {/if}
 
 <main class="session-main">
-  <div class="chat-thread" bind:this={chatThread} aria-live="polite" aria-label="Conversation">
-    {#if chatMessages.length === 0}
-      <p class="chat-empty">Loading Sunny.  Please wait.  Ensure volume is turned up.</p>
-    {/if}
-    {#each chatMessages as message (message.id)}
-      <div class:chat-user={message.role === 'user'} class:chat-status={message.role === 'status'} class="chat-row">
-        <p class="chat-bubble">{message.content}</p>
-      </div>
-    {/each}
-    {#if status === 'thinking'}
-      <div class="chat-row"><p class="chat-bubble chat-typing">Sunny is thinking...</p></div>
-    {/if}
-  </div>
-  <div class="sparkle-overlay">
-    <Sparkle intensity={status === 'ended' ? 0 : intensity} isPlaying={status !== 'ended' && status !== 'paused'} />
+  <ChatThread messages={chatMessages} status={status} />
+  <div
+    class:hidden={!sparkleVisible}
+    class="sparkle-overlay"
+    aria-hidden={!sparkleVisible}
+  >
+    <Sparkle intensity={intensity} />
   </div>
   {#if conversationActive && status === 'listening'}
-    <div class="recording-status" aria-live="polite">
-      <div class="recording-status-row">
-        <span>Recording</span>
-        <span>{formatDuration(recordingRemainingMs)} remaining</span>
-      </div>
-      <div
-        class="recording-progress"
-        role="progressbar"
-        aria-label="Recording time elapsed"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        aria-valuenow={recordingProgress}
-      >
-        <span style={`width: ${recordingProgress}%`}></span>
-      </div>
-    </div>
+    <RecordingStatus progress={recordingProgress} remainingMs={recordingRemainingMs} />
   {/if}
-  <!-- <p class="volume-status">
-    Mic volume {Math.round(inputVolume * 100)}% · silence threshold {Math.round(SILENCE_THRESHOLD * 100)}%
-  </p> -->
 </main>
 
 <footer class="session-footer">
