@@ -5,6 +5,7 @@
   import Sparkle from './Sparkle.svelte';
   import SpeechModel from './SpeechModel.svelte';
   import TranscriptionModel from './TranscriptionModel.svelte';
+  import { logger as console } from '../lib/logger';
   import type {
     AppConfig,
     LanguageModelController,
@@ -17,8 +18,11 @@
   type ChatMessage = { id: number; role: ChatRole; content: string };
 
 
-  const MAX_RESPONSE_WORDS = 40;
+  const MAX_RESPONSE_WORDS = 20;
   const SILENCE_THRESHOLD = 0.08;
+  const MAX_RECORDING_MS = 3 * 60 * 1000;
+  const SILENCE_END_MS = 10 * 1000;
+  const KNOWN_VOCABULARY = ['Sunny', 'MasterMoney.ai', 'NeuroRecursion'];
 
   let systemPrompt = '';
   let status = $state<Status>('downloading');
@@ -54,6 +58,10 @@
   let manualSilenceStartedAt = 0;
   let manualSpeechSamples: number[] = [];
   let lastManualCaptureAt = 0;
+  let recordingStartedAt = $state<number | undefined>();
+  let recordingElapsedMs = $state(0);
+  let lastSpeechActivityAt = 0;
+  let recordingTimer: ReturnType<typeof setInterval> | undefined;
   let config = $state<AppConfig | undefined>();
   let transcriptionModel = $state<TranscriptionModelController | undefined>();
   let languageModel = $state<LanguageModelController | undefined>();
@@ -64,6 +72,16 @@
   let activeModelDownload = false;
   let lastStatusAnnouncement = '';
   const loggedProgress = new Map<string, number>();
+
+  const recordingProgress = $derived(Math.min(100, (recordingElapsedMs / MAX_RECORDING_MS) * 100));
+  const recordingRemainingMs = $derived(Math.max(0, MAX_RECORDING_MS - recordingElapsedMs));
+
+  function formatDuration(milliseconds: number) {
+    const totalSeconds = Math.ceil(milliseconds / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  }
 
   function addChatMessage(role: ChatRole, content: string) {
     const message = content.trim();
@@ -185,6 +203,7 @@
         const sampleRate = inputContext?.sampleRate ?? 16_000;
         const captureInterval = (data.length / sampleRate) * 1000;
         if (volume >= SILENCE_THRESHOLD) {
+          lastSpeechActivityAt = now;
           if (!manualSpeechStartedAt) {
             manualSpeechStartedAt = now;
             manualSpeechSamples = [];
@@ -219,6 +238,11 @@
             void handleSpeech(audio, sampleRate);
           } else {
             console.warn('[Sunny] Mic fallback discarded a segment that was too short:', audio.length);
+          }
+          if (!manualSpeechStartedAt && now - lastSpeechActivityAt >= SILENCE_END_MS) {
+            addChatMessage('status', 'Listening ended after 10 seconds without speech.');
+            stopConversation();
+            return;
           }
         }
       }
@@ -259,7 +283,15 @@
     }
     await stopInputAnalyser();
     console.log('[Sunny] Requesting microphone access for sparkle analyser');
-    inputStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    inputStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        autoGainControl: true,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        sampleRate: 16_000,
+      },
+    });
     console.log('[Sunny] Sparkle microphone stream acquired:', {
       tracks: inputStream.getAudioTracks().map((track) => ({
         label: track.label,
@@ -301,6 +333,7 @@
         isDownloading = false;
         modelsReady = true;
         console.log('[Sunny] Model preparation complete');
+        void beginWelcome();
       } catch (error) {
         console.error('[Sunny] Model preparation failed:', error);
         downloadStatus = 'Model download failed — check the console';
@@ -358,7 +391,31 @@
       .replace(/^"|"$/g, '');
     console.log('[Sunny] Speaking session opening script');
     await speak(opening);
-    addChatMessage('assistant', opening);
+  }
+
+  async function beginWelcome() {
+    if (!modelsReady || welcomePlayed || startingConversation) return;
+    startingConversation = true;
+    errorMessage = '';
+    try {
+      await speakSessionOpening();
+      welcomePlayed = true;
+      if (languageModel) {
+        addChatMessage('status', 'Sunny is preparing the local response model.');
+        await languageModel.warm();
+      }
+      await startConversation();
+    } catch (error) {
+      console.error('[Sunny] Automatic welcome playback failed:', error);
+      errorMessage = error instanceof Error ? error.message : 'Unable to play the introductory welcome.';
+      addChatMessage(
+        'status',
+        'The browser blocked automatic audio playback. Press play once to start Sunny.',
+      );
+      status = 'paused';
+    } finally {
+      startingConversation = false;
+    }
   }
 
   function updateDownloadProgress(label: string, progress: number) {
@@ -416,6 +473,70 @@
     return text.trim().split(/\s+/).slice(0, MAX_RESPONSE_WORDS).join(' ');
   }
 
+  function keepSessionOpen(reply: string) {
+    const normalizedReply = reply.toLowerCase();
+    const closingLanguage = [
+      'story is complete',
+      'session is complete',
+      'next step will unlock',
+      'your status is synchronized',
+    ];
+    if (!closingLanguage.some((phrase) => normalizedReply.includes(phrase))) return reply;
+    console.warn('[Sunny] Rejected model-generated session closing:', reply);
+    return 'What absurd event should happen next in Chad’s story?';
+  }
+
+  function transcriptWords(text: string) {
+    return text.toLowerCase().match(/[a-z0-9]+(?:['.-][a-z0-9]+)*/g) ?? [];
+  }
+
+  function isSuspiciousTranscript(text: string) {
+    const words = transcriptWords(text);
+    if (!words.length) return false;
+    const repeatedWord = words.some((word, index) => word.length > 2 && words[index - 1] === word);
+    const unusualCharacters = text.replace(/[\p{L}\p{N}\s'.,!?-]/gu, '').length > 0;
+    return repeatedWord || unusualCharacters || (words.length >= 3 && !text.includes(' '));
+  }
+
+  function safelyAcceptCorrection(original: string, candidate: string) {
+    const cleanedCandidate = candidate.trim().replace(/^["']|["']$/g, '');
+    if (!cleanedCandidate) return original;
+    const originalWords = transcriptWords(original);
+    const candidateWords = transcriptWords(cleanedCandidate);
+    if (!originalWords.length || !candidateWords.length) return original;
+    if (candidateWords.length > Math.max(originalWords.length + 3, Math.ceil(originalWords.length * 1.5))) {
+      return original;
+    }
+    if (candidateWords.length < Math.max(1, Math.floor(originalWords.length * 0.5))) return original;
+    const originalSet = new Set(originalWords);
+    const sharedWords = candidateWords.filter((word) => originalSet.has(word)).length;
+    if (sharedWords / Math.max(originalSet.size, candidateWords.length) < 0.35) return original;
+    return cleanedCandidate;
+  }
+
+  async function correctSuspiciousTranscript(text: string) {
+    if (!languageModel || !isSuspiciousTranscript(text)) return text;
+    const recentContext = conversationContext().split('\n\n').slice(-6).join('\n\n');
+    const correctionPrompt = `Correct this speech transcription only when it is clearly misspelled or grammatically malformed.
+Return only the corrected transcription, with no explanation. Preserve the user's meaning, wording, and length. If it is already understandable, return it unchanged.
+Known vocabulary: ${KNOWN_VOCABULARY.join(', ')}
+Recent conversation:
+${recentContext || '(none)'}
+Transcription:
+${text}`;
+    try {
+      const candidate = await languageModel.generate(correctionPrompt, Math.max(32, text.length));
+      const corrected = safelyAcceptCorrection(text, candidate);
+      if (corrected !== text) {
+        console.log('[Sunny] Accepted local transcript correction:', { original: text, corrected });
+      }
+      return corrected;
+    } catch (error) {
+      console.warn('[Sunny] Transcript correction skipped:', error);
+      return text;
+    }
+  }
+
   async function handleSpeech(audioData: Float32Array, sampleRate: number) {
     if (processing || !conversationActive || status === 'ended') {
       console.debug('[Sunny] Audio segment ignored:', {
@@ -449,9 +570,13 @@
       const transcription = await transcriptionModel.transcribeAudio(makeWav(audioData, sampleRate));
       console.timeEnd('[Sunny] Transcription');
       console.log('[Sunny] Transcription result:', transcription);
-      const text = transcription.text.trim();
+      const rawText = transcription.text.trim();
+      const text = await correctSuspiciousTranscript(rawText);
       lastUtterance = text;
-      console.log('[Sunny] Transcribed text:', JSON.stringify(text));
+      console.log('[Sunny] Transcribed text:', {
+        raw: rawText,
+        corrected: text,
+      });
       console.log('[Sunny] Transcription details:', {
         characterCount: text.length,
         sampleRate,
@@ -470,14 +595,30 @@
         return;
       }
 
-      const prompt = `${systemPrompt}\n\nKeep every response to no more than ${MAX_RESPONSE_WORDS} words.\n\nConversation:\n${conversationContext()}`;
+      const prompt = `${systemPrompt}
+
+Conversation transcript:
+${conversationContext()}
+
+Respond to the latest User message only. Do not repeat the system prompt, the session opening, disclosures, or earlier responses. In one or two short sentences, acknowledge the story's tone, then encourage a darker sensory or emotional escalation with one direct question. Keep the response under ${MAX_RESPONSE_WORDS} words.
+Never end, close, complete, or pause the session yourself. The user ends the session only by saying exactly "good night sunny".
+Assistant response:`;
       console.log('[Sunny] LLM request:', { prompt });
       console.log('[Sunny] Loading/using language model:', config?.models.language.name);
-      const reply = limitResponseWords(await languageModel.generate(prompt, 64));
-      console.log('[Sunny] WebLLM model ready');
-      console.log('[Sunny] LLM response:', { text: reply });
-      addChatMessage('assistant', reply);
-      await speak(reply);
+const ttsQueue = createTtsQueue();
+const generation = languageModel.generateStreaming(prompt, 24, (chunk) => ttsQueue.enqueue(chunk));
+const speech = speakGeneratedChunks(ttsQueue);
+try {
+  const generatedReply = await generation;
+  const reply = keepSessionOpen(limitResponseWords(generatedReply));
+  console.log('[Sunny] Streaming LLM response:', { text: reply });
+  ttsQueue.finish();
+  await speech;
+} catch (error) {
+  ttsQueue.fail(error);
+  await speech.catch(() => undefined);
+  throw error;
+}
       // await speak(reply, false);
       // if (conversationActive) await speak("Okay. I'm listening");
     } catch (error) {
@@ -501,12 +642,58 @@
     }
   }
 
-  async function speak(text: string, resumeListening = true) {
+  function splitTtsChunks(text: string, maxSentences = 3) {
+    const sentences = text.trim().match(/[^.!?]+[.!?]+["']?(?=\s|$)|[^.!?]+$/g) ?? [];
+    const chunks: string[] = [];
+    for (let index = 0; index < sentences.length; index += maxSentences) {
+      const chunk = sentences
+        .slice(index, index + maxSentences)
+        .join(' ')
+        .trim();
+      if (chunk) chunks.push(chunk);
+    }
+    return chunks.length ? chunks : [text.trim()];
+  }
+
+  function createTtsQueue() {
+    const chunks: string[] = [];
+    const waiters: Array<{
+      resolve: (result: IteratorResult<string>) => void;
+      reject: (error: unknown) => void;
+    }> = [];
+    let finished = false;
+    let failure: unknown;
+
+    return {
+      enqueue(chunk: string) {
+        const text = chunk.trim();
+        if (!text || finished) return;
+        const waiter = waiters.shift();
+        if (waiter) waiter.resolve({ value: text, done: false });
+        else chunks.push(text);
+      },
+      finish() {
+        finished = true;
+        while (waiters.length) waiters.shift()?.resolve({ value: undefined, done: true });
+      },
+      fail(error: unknown) {
+        failure = error;
+        finished = true;
+        while (waiters.length) waiters.shift()?.reject(error);
+      },
+      next(): Promise<IteratorResult<string>> {
+        if (failure !== undefined) return Promise.reject(failure);
+        const chunk = chunks.shift();
+        if (chunk) return Promise.resolve({ value: chunk, done: false });
+        if (finished) return Promise.resolve({ value: undefined, done: true });
+        return new Promise((resolve, reject) => waiters.push({ resolve, reject }));
+      },
+    };
+  }
+
+  async function synthesizeSpeechChunk(text: string) {
     console.log('[Sunny] TTS request:', { text });
     console.log('[Sunny] Loading/using speech model:', config?.models.speech.name);
-    status = 'speaking';
-    console.log('[Sunny] Input listening disabled during TTS synthesis');
-    await stopInputAnalyser();
     if (!speechModel) throw new Error('Speech model component was not initialized.');
     console.time('[Sunny] Piper synthesis');
     const audio = await speechModel.synthesize(text);
@@ -515,6 +702,10 @@
       characterCount: text.length,
       audioBytes: audio.size,
     });
+    return audio;
+  }
+
+  async function playSpeechChunk(text: string, audio: Blob, resumeListening: boolean) {
     const url = URL.createObjectURL(audio);
     outputAudio = new Audio(url);
     outputAudio.playbackRate = 0.9;
@@ -548,6 +739,49 @@
     console.log('[Sunny] TTS playback finished; response processing complete');
   }
 
+  async function speak(text: string, resumeListening = true) {
+    const chunks = splitTtsChunks(text);
+    console.log('[Sunny] TTS message split into chunks:', {
+      chunkCount: chunks.length,
+      sentenceLimit: 3,
+    });
+    status = 'speaking';
+    console.log('[Sunny] Input listening disabled during TTS synthesis');
+    await stopInputAnalyser();
+    let nextAudio = synthesizeSpeechChunk(chunks[0]);
+    for (let index = 0; index < chunks.length; index += 1) {
+      const isLastChunk = index === chunks.length - 1;
+      addChatMessage('assistant', chunks[index]);
+      await tick();
+      const audio = await nextAudio;
+      nextAudio = isLastChunk ? Promise.resolve(audio) : synthesizeSpeechChunk(chunks[index + 1]);
+      await playSpeechChunk(chunks[index], audio, resumeListening && isLastChunk);
+    }
+  }
+
+  async function speakGeneratedChunks(queue: ReturnType<typeof createTtsQueue>) {
+    status = 'speaking';
+    console.log('[Sunny] Input listening disabled during streaming TTS');
+    await stopInputAnalyser();
+    const first = await queue.next();
+    if (first.done) throw new Error('Local language model returned no speakable response.');
+
+    let currentText = first.value;
+    let nextAudio = synthesizeSpeechChunk(currentText);
+    while (true) {
+      addChatMessage('assistant', currentText);
+      await tick();
+      const audio = await nextAudio;
+      const playback = playSpeechChunk(currentText, audio, false);
+      const next = await queue.next();
+      const upcomingAudio = next.done ? undefined : synthesizeSpeechChunk(next.value);
+      await playback;
+      if (next.done) return;
+      currentText = next.value;
+      nextAudio = upcomingAudio!;
+    }
+  }
+
   async function startConversation() {
     if (startingConversation) {
       console.warn('[Sunny] Conversation start skipped: startup already in progress');
@@ -558,6 +792,19 @@
     errorMessage = '';
     conversationActive = true;
     status = 'listening';
+    recordingStartedAt ??= Date.now();
+    recordingElapsedMs = Date.now() - recordingStartedAt;
+    lastSpeechActivityAt = performance.now();
+    if (!recordingTimer) {
+      recordingTimer = setInterval(() => {
+        if (!recordingStartedAt || !conversationActive) return;
+        recordingElapsedMs = Math.min(MAX_RECORDING_MS, Date.now() - recordingStartedAt);
+        if (recordingElapsedMs >= MAX_RECORDING_MS) {
+          addChatMessage('status', 'Three-minute recording limit reached.');
+          stopConversation();
+        }
+      }, 250);
+    }
     try {
       await setupInputAnalyser();
       console.log('[Sunny] Sparkle analyser ready; microphone detection is active');
@@ -577,6 +824,13 @@
     manualSilenceStartedAt = 0;
     manualSpeechSamples = [];
     lastManualCaptureAt = 0;
+    if (recordingTimer) {
+      clearInterval(recordingTimer);
+      recordingTimer = undefined;
+    }
+    recordingStartedAt = undefined;
+    recordingElapsedMs = 0;
+    lastSpeechActivityAt = 0;
     const resolvePlayback = finishPlayback;
     finishPlayback = undefined;
     resolvePlayback?.();
@@ -595,21 +849,7 @@
       return;
     }
     if (!welcomePlayed) {
-      startingConversation = true;
-      errorMessage = '';
-      try {
-        await speakSessionOpening();
-        welcomePlayed = true;
-        startingConversation = false;
-        await startConversation();
-      } catch (error) {
-        console.error('[Sunny] Welcome playback failed:', error);
-        errorMessage = error instanceof Error ? error.message : 'Unable to play the introductory welcome.';
-        addChatMessage('status', errorMessage);
-        status = 'error';
-      } finally {
-        startingConversation = false;
-      }
+      await beginWelcome();
       return;
     }
     if (conversationActive) {
@@ -665,7 +905,7 @@
 <main class="session-main">
   <div class="chat-thread" bind:this={chatThread} aria-live="polite" aria-label="Conversation">
     {#if chatMessages.length === 0}
-      <p class="chat-empty">Your conversation with Sunny will appear here.</p>
+      <p class="chat-empty">Loading Sunny.  Please wait.  Ensure volume is turned up.</p>
     {/if}
     {#each chatMessages as message (message.id)}
       <div class:chat-user={message.role === 'user'} class:chat-status={message.role === 'status'} class="chat-row">
@@ -679,6 +919,24 @@
   <div class="sparkle-overlay">
     <Sparkle intensity={status === 'ended' ? 0 : intensity} isPlaying={status !== 'ended' && status !== 'paused'} />
   </div>
+  {#if conversationActive && status === 'listening'}
+    <div class="recording-status" aria-live="polite">
+      <div class="recording-status-row">
+        <span>Recording</span>
+        <span>{formatDuration(recordingRemainingMs)} remaining</span>
+      </div>
+      <div
+        class="recording-progress"
+        role="progressbar"
+        aria-label="Recording time elapsed"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={recordingProgress}
+      >
+        <span style={`width: ${recordingProgress}%`}></span>
+      </div>
+    </div>
+  {/if}
   <!-- <p class="volume-status">
     Mic volume {Math.round(inputVolume * 100)}% · silence threshold {Math.round(SILENCE_THRESHOLD * 100)}%
   </p> -->

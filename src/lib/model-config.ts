@@ -18,12 +18,18 @@ export interface AppConfig {
 
 export interface TranscriptionModelController {
   prepare: () => Promise<void>;
-  transcribeAudio: (audio: Blob) => Promise<{ text: string }>;
+  transcribeAudio: (audio: Blob) => Promise<{ text: string; confidence?: number }>;
 }
 
 export interface LanguageModelController {
   prepare: () => Promise<void>;
-  generate: (prompt: string, maxTokens: number) => Promise<string>;
+  warm: () => Promise<void>;
+  generate: (prompt: string, maxTokens?: number) => Promise<string>;
+  generateStreaming: (
+    prompt: string,
+    maxTokens: number,
+    onChunk: (chunk: string) => void,
+  ) => Promise<string>;
 }
 
 export interface SpeechModelController {
@@ -38,8 +44,8 @@ export const defaultAppConfig: AppConfig = {
       location: 'huggingface',
     },
     language: {
-      name: 'onnx-community/Qwen3.5-2B-ONNX',
-      location: 'huggingface',
+      name: 'Qwen3-0.6B-q4f16_1-MLC',
+      location: 'webllm',
     },
     speech: {
       name: 'en_US-libritts_r-medium',

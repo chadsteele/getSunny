@@ -10,10 +10,11 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100svh; background: #020202; }
-button { font: inherit; }
+button { font: inherit; user-select: none; -webkit-user-select: none; }
 
 .phone-frame {
   width: 100%;
+  height: 100svh;
   min-height: 100svh;
   margin: 0 auto;
   position: relative;
@@ -21,9 +22,9 @@ button { font: inherit; }
   background: radial-gradient(circle at 50% 46%, #110b02 0, #050403 26%, #020202 58%);
 }
 
-.phone-content { min-height: 100%; min-width: 0; padding: 28px 30px 32px; position: relative; z-index: 1; display: flex; flex-direction: column; }
-.topbar { display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 3; }
-.menu-button { width: 44px; height: 44px; border: 0; background: transparent; padding: 9px 5px; cursor: pointer; display: grid; align-content: center; gap: 6px; }
+.phone-content { height: 100%; min-height: 0; min-width: 0; overflow: hidden; padding: 28px 30px 32px; position: relative; z-index: 1; display: flex; flex-direction: column; }
+.topbar { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; z-index: 5; padding-block: 4px; background: #020202e6; }
+.menu-button { width: 44px; height: 44px; border: 0; background: transparent; padding: 9px 5px; cursor: pointer; display: grid; align-content: center; gap: 6px; user-select: none; -webkit-user-select: none; }
 .menu-button span { display: block; width: 31px; height: 3px; border-radius: 2px; background: #eab44d; box-shadow: 0 0 8px #d8922f; }
 .brand { position: absolute; left: 50%; transform: translateX(-50%); font-family: 'Playfair Display', serif; font-size: 25px; letter-spacing: .03em; color: #f3c35c; }
 .brand span { color: #f8df99; }
@@ -32,7 +33,7 @@ button { font: inherit; }
 .step-dot { display: inline-block; width: 5px; height: 5px; background: #e5a839; border-radius: 50%; margin: 0 0 3px 7px; }
 .menu-popover { position: absolute; top: 76px; left: 29px; z-index: 4; display: grid; gap: 13px; padding: 17px 20px; border: 1px solid #5b3e16; background: #0c0905; border-radius: 12px; box-shadow: 0 15px 40px #000; }
 .menu-popover a { color: #eeb64e; font-size: 13px; text-decoration: none; }
-.session-main { flex: 1; width: calc(100% + 60px); min-width: 0; min-height: 430px; margin-left: -30px; position: relative; display: grid; place-items: center; justify-items: center; }
+.session-main { flex: 1; width: calc(100% + 60px); min-width: 0; min-height: 0; margin-left: -30px; position: static; display: grid; place-items: center; justify-items: center; }
 .eyebrow { position: absolute; top: 8%; font-size: 11px; text-transform: uppercase; letter-spacing: .22em; color: #96723a; opacity: .8; }
 .sparkle-stage { --size: min(78vw, 350px); width: var(--size); max-width: 100%; aspect-ratio: 1; position: relative; justify-self: center; margin-inline: auto; transform: scale(var(--spark-scale)); transition: transform 160ms ease-out; }
 .sparkle-stage.active { animation: breathe 1.65s ease-in-out infinite; }
@@ -44,7 +45,7 @@ button { font: inherit; }
 .spark-core { display: grid; place-items: center; }
 .core-halo { position: absolute; width: 52%; aspect-ratio: 1; background: #e99e18; border-radius: 50%; filter: blur(25px); opacity: var(--spark-glow); }
 .core { width: 18%; aspect-ratio: 1; border-radius: 50%; background: #fff9d8; box-shadow: 0 0 12px 6px #fff3a3, 0 0 35px 20px #ffc844, 0 0 75px 30px #dc8e16; }
-.session-footer { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
+.session-footer { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: end; justify-content: space-between; gap: 18px; padding-top: 10px; background: #020202e6; }
 .prompt { display: grid; gap: 6px; padding-bottom: 10px; }
 .prompt-kicker { color: #a97a2e; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
 .prompt-title { color: #efb64d; font-size: clamp(22px, 6vw, 28px); letter-spacing: -.03em; white-space: nowrap; }
@@ -53,7 +54,7 @@ button { font: inherit; }
 .download-track { width: 100%; height: 3px; overflow: hidden; border-radius: 999px; background: #3a2810; box-shadow: inset 0 0 4px #0a0703; }
 .download-track span { display: block; height: 100%; border-radius: inherit; background: #efb64d; box-shadow: 0 0 8px #e6a52b; transition: width .2s ease-out; }
 .volume-status { position: absolute; top: 72%; left: 50%; margin: 0; color: #80602d; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; transform: translateX(-50%); white-space: nowrap; }
-.play-button { width: 75px; height: 75px; flex: 0 0 auto; border: 2px solid #e8ad3d; border-radius: 50%; color: #f5c45b; background: #090704; box-shadow: inset 0 0 13px #9f6519, 0 0 18px #9a5c14; display: grid; place-items: center; cursor: pointer; transition: transform .2s, box-shadow .2s; }
+.play-button { width: 75px; height: 75px; flex: 0 0 auto; border: 2px solid #e8ad3d; border-radius: 50%; color: #f5c45b; background: #090704; box-shadow: inset 0 0 13px #9f6519, 0 0 18px #9a5c14; display: grid; place-items: center; cursor: pointer; transition: transform .2s, box-shadow .2s; user-select: none; -webkit-user-select: none; }
 .play-button:hover { transform: scale(1.05); box-shadow: inset 0 0 18px #b77723, 0 0 28px #bc751e; }
 .play-button.playing { background: #1b1205; }
 .pause-icon { display: flex; gap: 7px; }
@@ -75,15 +76,19 @@ button { font: inherit; }
   .audio-upload { left: 46px; bottom: 16px; }
 }
 
-.chat-thread { flex: 1; min-height: 0; width: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 18px 8px 105px; scroll-behavior: smooth; }
+.chat-thread { flex: 1; min-height: 0; width: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 18px 8px 105px; position: relative; z-index: 2; scroll-behavior: smooth; }
 .chat-row { display: flex; justify-content: flex-start; width: 100%; }
 .chat-row.chat-user { justify-content: flex-end; }
 .chat-bubble { max-width: 82%; margin: 0; padding: 11px 14px; border: 1px solid #5b3e16; border-radius: 17px 17px 17px 4px; color: #f3cf82; background: #100b05; font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 5px 16px #0008; }
 .chat-user .chat-bubble { border-color: #9a6a22; border-radius: 17px 17px 4px 17px; color: #fff0bd; background: #33200a; }
 .chat-status .chat-bubble, .chat-typing { border-color: #4b3b24; color: #a98d5c; background: #080705; font-size: 12px; font-style: italic; }
 .chat-empty { margin: auto; color: #8e6e3a; font-size: 13px; text-align: center; }
-.sparkle-overlay { position: absolute; right: 3%; bottom: 4%; z-index: 4; width: 105px; pointer-events: none; }
-.sparkle-overlay .sparkle-stage { --size: 105px; }
-@media (min-width: 600px) { .chat-thread { padding-inline: 14px; } .sparkle-overlay { right: 4%; } }
+.recording-status { position: absolute; right: 3%; bottom: 1%; z-index: 4; width: min(180px, 48%); color: #b9934b; font-size: 10px; letter-spacing: .04em; pointer-events: none; }
+.recording-status-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.recording-progress { width: 100%; height: 3px; overflow: hidden; border-radius: 999px; background: #3a2810; box-shadow: inset 0 0 4px #0a0703; }
+.recording-progress span { display: block; height: 100%; border-radius: inherit; background: #efb64d; box-shadow: 0 0 8px #e6a52b; transition: width .25s linear; }
+.sparkle-overlay { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; pointer-events: none; }
+.sparkle-overlay .sparkle-stage { --size: min(78vw, 350px); }
+@media (min-width: 600px) { .chat-thread { padding-inline: 14px; } .sparkle-overlay { right: 0; } }
 
 .session-main { display: flex; flex-direction: column; align-items: stretch; justify-content: stretch; }

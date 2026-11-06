@@ -4,6 +4,7 @@
     stored as storedPiperVoices,
     TtsSession,
   } from '@realtimex/piper-tts-web';
+  import { logger as console } from '../lib/logger';
   import type { ModelConfig } from '../lib/model-config';
 
   interface Props {
