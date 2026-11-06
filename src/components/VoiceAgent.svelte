@@ -51,6 +51,8 @@
   let startingConversation = false;
   let animationFrameCount = 0;
   let lastMicDebugAt = 0;
+  let outputDebugStartedAt = 0;
+  let lastOutputDebugAt = 0;
   let manualSpeechStartedAt = 0;
   let manualSilenceStartedAt = 0;
   let manualSpeechSamples: number[] = [];
@@ -173,6 +175,17 @@
       analyser.getFloatTimeDomainData(data);
       const volume = Math.min(1, getRms(data) * 7);
       const now = performance.now();
+      if (analyser === outputAnalyser && now - outputDebugStartedAt < 4000 && now - lastOutputDebugAt >= 250) {
+        console.log('[Sunny] Output analyser sample:', {
+          volumePercent: Math.round(volume * 100),
+          elapsedMs: Math.round(now - outputDebugStartedAt),
+          audioCurrentTime: outputAudio?.currentTime,
+          audioDuration: outputAudio?.duration,
+          audioPaused: outputAudio?.paused,
+          contextState: outputContext?.state,
+        });
+        lastOutputDebugAt = now;
+      }
       if (analyser === inputAnalyser && now - lastMicDebugAt > 1000) {
         console.log('[Sunny] Mic analyser sample:', {
           volumePercent: Math.round(volume * 100),
@@ -671,8 +684,9 @@ Assistant response:`;
   }
 
   async function synthesizeSpeechChunk(text: string) {
+    const synthesisStartedAt = performance.now();
     console.log('[Sunny] TTS request:', { text });
-    console.log('[Sunny] Loading/using speech model:', config?.models.speech.name);
+    console.log('[Sunny] Using prepared speech model:', config?.models.speech.name);
     if (!speechModel) throw new Error('Speech model component was not initialized.');
     console.time('[Sunny] Piper synthesis');
     const audio = await speechModel.synthesize(text);
@@ -680,15 +694,21 @@ Assistant response:`;
     console.log('[Sunny] Piper synthesis complete:', {
       characterCount: text.length,
       audioBytes: audio.size,
+      durationMs: Math.round(performance.now() - synthesisStartedAt),
     });
     return audio;
   }
 
   async function playSpeechChunk(text: string, audio: Blob, resumeListening: boolean) {
+    const playbackStartedAt = performance.now();
     const url = URL.createObjectURL(audio);
     outputAudio = new Audio(url);
+    outputAudio.preload = 'auto';
     outputAudio.playbackRate = 0.9;
-    outputContext = new AudioContext();
+    if (!outputContext || outputContext.state === 'closed') {
+      outputContext = new AudioContext();
+      console.log('[Sunny] Created shared TTS output AudioContext');
+    }
     outputAnalyser = outputContext.createAnalyser();
     outputAnalyser.fftSize = 256;
     outputAnalyser.smoothingTimeConstant = 0;
@@ -696,10 +716,23 @@ Assistant response:`;
     const source = outputContext.createMediaElementSource(outputAudio);
     source.connect(outputAnalyser);
     outputAnalyser.connect(outputContext.destination);
+    outputDebugStartedAt = performance.now();
+    lastOutputDebugAt = 0;
+    console.log('[Sunny] TTS output graph ready:', {
+      text,
+      audioBytes: audio.size,
+      fftSize: outputAnalyser.fftSize,
+      contextState: outputContext.state,
+      setupDurationMs: Math.round(performance.now() - playbackStartedAt),
+    });
     outputAudio.onended = () => {
+      console.log('[Sunny] TTS audio ended:', {
+        text,
+        playbackDurationMs: Math.round(performance.now() - playbackStartedAt),
+      });
       URL.revokeObjectURL(url);
-      outputContext?.close();
-      outputContext = undefined;
+      source.disconnect();
+      outputAnalyser?.disconnect();
       outputAnalyser = undefined;
       outputData = undefined;
       status = resumeListening && conversationActive ? 'listening' : 'speaking';
@@ -708,6 +741,37 @@ Assistant response:`;
       resolvePlayback?.();
       if (conversationActive && resumeListening) animateAudio();
     };
+    outputAudio.onplaying = () => {
+      console.log('[Sunny] TTS audio playing event:', {
+        audioCurrentTime: outputAudio?.currentTime,
+        elapsedMs: Math.round(performance.now() - playbackStartedAt),
+        contextState: outputContext?.state,
+      });
+    };
+    const mediaReady = outputAudio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+      ? Promise.resolve()
+      : new Promise<void>((resolve, reject) => {
+          const handleReady = () => {
+            outputAudio?.removeEventListener('canplay', handleReady);
+            outputAudio?.removeEventListener('error', handleError);
+            resolve();
+          };
+          const handleError = () => {
+            outputAudio?.removeEventListener('canplay', handleReady);
+            outputAudio?.removeEventListener('error', handleError);
+            reject(new Error('TTS audio failed to load.'));
+          };
+          outputAudio?.addEventListener('canplay', handleReady, { once: true });
+          outputAudio?.addEventListener('error', handleError, { once: true });
+        });
+    outputAudio.load();
+    await mediaReady;
+    console.log('[Sunny] TTS media decoded enough to play:', {
+      audioCurrentTime: outputAudio.currentTime,
+      audioDuration: outputAudio.duration,
+      readyState: outputAudio.readyState,
+      durationMs: Math.round(performance.now() - playbackStartedAt),
+    });
     const playbackComplete = new Promise<void>((resolve) => {
       finishPlayback = resolve;
     });
