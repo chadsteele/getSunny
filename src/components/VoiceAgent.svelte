@@ -23,7 +23,7 @@
   const SILENCE_THRESHOLD = 0.08;
   const MAX_RECORDING_MS = 3 * 60 * 1000;
   const SILENCE_END_MS = 10 * 1000;
-  const KNOWN_VOCABULARY = ['Sunny', 'MasterMoney.ai', 'NeuroRecursion'];
+  const KNOWN_VOCABULARY = ['Sunny', 'Mastering Money', 'MasterMoney.ai', 'NeuroRecursion'];
 
   let systemPrompt = '';
   let status = $state<Status>('downloading');
@@ -466,6 +466,11 @@
       'session is complete',
       'next step will unlock',
       'your status is synchronized',
+      'good night',
+      'goodbye',
+      'conversation is over',
+      'conversation has ended',
+      'session has ended',
     ];
     if (!closingLanguage.some((phrase) => normalizedReply.includes(phrase))) return reply;
     console.warn('[Sunny] Rejected model-generated session closing:', reply);
@@ -481,7 +486,14 @@
     if (!words.length) return false;
     const repeatedWord = words.some((word, index) => word.length > 2 && words[index - 1] === word);
     const unusualCharacters = text.replace(/[\p{L}\p{N}\s'.,!?-]/gu, '').length > 0;
-    return repeatedWord || unusualCharacters || (words.length >= 3 && !text.includes(' '));
+    const likelyMasteringMoneyMisrecognition =
+      /\bmaster(?:ing|ed)?\b/i.test(text) && !/\bmoney\b/i.test(text);
+    return (
+      repeatedWord ||
+      unusualCharacters ||
+      (words.length >= 3 && !text.includes(' ')) ||
+      likelyMasteringMoneyMisrecognition
+    );
   }
 
   function safelyAcceptCorrection(original: string, candidate: string) {
@@ -586,15 +598,16 @@ Conversation transcript:
 ${conversationContext()}
 
 Respond to the latest User message only. Output only the final response; never output private reasoning or <think> tags. In one or two short sentences, acknowledge the story's tone, then encourage a darker sensory or emotional escalation with one direct question. Keep the response concise and complete.
-Never end, close, complete, or pause the session yourself. The user ends the session only by saying exactly "good night sunny".
-Assistant response:`;
+Never end, close, complete, or pause the session yourself. Do not mention or repeat the user's private end command. Keep the conversation open and ask what should happen next.
+Assistant response:
+/no_think`;
       console.log('[Sunny] LLM request:', { prompt });
       console.log('[Sunny] Loading/using language model:', config?.models.language.name);
       const ttsQueue = createTtsQueue();
       let streamedChunkCount = 0;
       const generation = languageModel.generateStreaming(prompt, undefined, (chunk) => {
         streamedChunkCount += 1;
-        ttsQueue.enqueue(chunk);
+        ttsQueue.enqueue(keepSessionOpen(chunk));
       });
       const speech = speakGeneratedChunks(ttsQueue);
       try {

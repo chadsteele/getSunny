@@ -17,6 +17,46 @@
   let { config, onProgress, onDownloadStateChange }: Props = $props();
   let model = $derived(transformers.speechToText(config.name));
 
+  async function boostQuietAudio(audio: Blob) {
+    const buffer = await audio.arrayBuffer();
+    const view = new DataView(buffer);
+    if (view.getUint32(0, false) !== 0x52494646 || view.getUint32(8, false) !== 0x57415645) {
+      return audio;
+    }
+
+    const dataOffset = 44;
+    const sampleCount = Math.floor((buffer.byteLength - dataOffset) / 2);
+    let peak = 0;
+    let totalEnergy = 0;
+    for (let index = 0; index < sampleCount; index += 1) {
+      const sample = view.getInt16(dataOffset + index * 2, true) / 0x8000;
+      peak = Math.max(peak, Math.abs(sample));
+      totalEnergy += sample ** 2;
+    }
+    const rms = Math.sqrt(totalEnergy / Math.max(1, sampleCount));
+    console.log('[Sunny] Transcription PCM level:', {
+      peak: Number(peak.toFixed(4)),
+      rms: Number(rms.toFixed(4)),
+      sampleCount,
+    });
+    if (peak >= 0.1 || peak === 0) return audio;
+
+    const gain = Math.min(6, 0.6 / peak);
+    for (let index = 0; index < sampleCount; index += 1) {
+      const sample = view.getInt16(dataOffset + index * 2, true) / 0x8000;
+      const amplified = Math.max(-1, Math.min(1, sample * gain));
+      view.setInt16(
+        dataOffset + index * 2,
+        amplified * (amplified < 0 ? 0x8000 : 0x7fff),
+        true,
+      );
+    }
+    console.log('[Sunny] Retrying transcription with quiet-audio gain:', {
+      gain: Number(gain.toFixed(2)),
+    });
+    return new Blob([buffer], { type: 'audio/wav' });
+  }
+
   function preprocessAudio(audio: Blob) {
     return audio.arrayBuffer().then((buffer) => {
       const view = new DataView(buffer);
@@ -89,6 +129,11 @@
     if (result.text.trim() || preprocessedAudio === audio) return result;
 
     console.warn('[Sunny] Preprocessed transcription was empty; retrying original audio');
-    return transcribe({ model, audio });
+    const originalResult = await transcribe({ model, audio });
+    if (originalResult.text.trim()) return originalResult;
+
+    const boostedAudio = await boostQuietAudio(audio);
+    if (boostedAudio === audio) return originalResult;
+    return transcribe({ model, audio: boostedAudio });
   }
 </script>

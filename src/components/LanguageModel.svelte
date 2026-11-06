@@ -142,6 +142,7 @@
       });
       let pending = '';
       let fullText = '';
+      let rawText = '';
       let insideThinking = false;
 
       const emitVisibleText = (text: string) => {
@@ -160,6 +161,7 @@
       };
 
       for await (const chunk of result.stream) {
+        rawText += chunk.text;
         let remaining = chunk.text;
         while (remaining) {
           if (insideThinking) {
@@ -180,6 +182,25 @@
         }
       }
       if (!insideThinking && pending.trim()) onChunk(pending.trim());
+      if (!fullText.trim() && rawText.trim()) {
+        const recoveredText = rawText
+          .replace(/<think>[\s\S]*?<\/think>/gi, '')
+          .replace(/<think>[\s\S]*$/gi, '')
+          .trim();
+        console.warn('[Sunny] Streaming filter recovered final text:', {
+          rawCharacterCount: rawText.length,
+          recoveredCharacterCount: recoveredText.length,
+        });
+        if (recoveredText) {
+          fullText = recoveredText;
+          onChunk(recoveredText);
+        }
+      }
+      console.log('[Sunny] Streaming text filter result:', {
+        rawCharacterCount: rawText.length,
+        visibleCharacterCount: fullText.length,
+        endedInsideThinking: insideThinking,
+      });
       if (!fullText.trim()) throw new Error('Local language model returned an empty response.');
       console.log('[Sunny] Streaming local language generation complete:', {
         characterCount: fullText.length,

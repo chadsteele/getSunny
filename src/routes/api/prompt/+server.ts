@@ -47,7 +47,7 @@ If you are over 18 years old, understand the terms, and take full responsibility
 
 
 Session Closing (After Story Consolidation)
-"The story is complete for this step. Your status is synchronized. The next step will unlock after the required interval. This session is complete."
+"Do not generate a closing message. Keep the conversation open and continue asking what should happen next."
 
 `;
 
