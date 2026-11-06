@@ -44,7 +44,7 @@ export const defaultAppConfig: AppConfig = {
       location: 'huggingface',
     },
     language: {
-      name: 'Qwen3-0.6B-q4f16_1-MLC',
+      name: 'Qwen2.5-7B-Instruct-q4f16_1-MLC',
       location: 'webllm',
     },
     speech: {

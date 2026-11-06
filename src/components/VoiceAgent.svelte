@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import ChatThread from './ChatThread.svelte';
   import AudioControls from './AudioControls.svelte';
+  import DownloadProgress from './DownloadProgress.svelte';
   import LanguageModel from './LanguageModel.svelte';
   import RecordingStatus from './RecordingStatus.svelte';
   import Sparkle from './Sparkle.svelte';
@@ -26,9 +27,15 @@
   const KNOWN_VOCABULARY = ['Sunny', 'Mastering Money', 'MasterMoney.ai', 'NeuroRecursion'];
 
   let systemPrompt = '';
+  let promptSequence: string[] = [];
+  let promptIndex = 0;
   let status = $state<Status>('downloading');
   let intensity = $state(0.18);
   let sparkleVisible = $state(false);
+  let reviewMessageId = $state<number | undefined>();
+  let reviewResume: (() => void) | undefined;
+  let cancelActivePipeline: (() => void) | undefined;
+  let pipelineVersion = 0;
   let conversationActive = $state(false);
   let modelsReady = $state(false);
   let welcomePlayed = $state(false);
@@ -37,6 +44,9 @@
   let errorMessage = $state('');
   let downloadStatus = $state('Preparing voice models...');
   let downloadingModel = $state('voice models');
+  let downloadProgress = $state(0);
+  let downloadRemainingMs = $state(0);
+  let downloadStartedAt = 0;
   let inputStream: MediaStream | undefined;
   let inputContext: AudioContext | undefined;
   let inputAnalyser: AnalyserNode | undefined;
@@ -68,7 +78,7 @@
   let modelPreparation: Promise<void> | undefined;
   let hasAnnouncedReady = false;
   let downloadingOccurred = false;
-  let activeModelDownload = false;
+  let activeModelDownload = $state(false);
   let lastStatusAnnouncement = '';
   const loggedProgress = new Map<string, number>();
 
@@ -86,6 +96,54 @@
       .filter(({ role }) => role !== 'status')
       .map(({ role, content }) => `${role === 'user' ? 'User' : 'Sunny'}: ${content}`)
       .join('\n\n');
+  }
+
+  function waitForReview() {
+    if (reviewMessageId === undefined) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      reviewResume = resolve;
+    });
+  }
+
+  function reviewUserMessage(messageId: number) {
+    if (reviewMessageId !== undefined) return;
+    reviewMessageId = messageId;
+    outputAudio?.pause();
+    status = 'paused';
+    void stopInputAnalyser();
+  }
+
+  function continueReview() {
+    reviewMessageId = undefined;
+    reviewResume?.();
+    reviewResume = undefined;
+    if (outputAudio && !outputAudio.ended) {
+      status = 'speaking';
+      void outputAudio.play().catch((error: unknown) => {
+        console.error('[Sunny] Unable to resume reviewed audio:', error);
+        status = 'error';
+      });
+    } else if (conversationActive) {
+      status = 'listening';
+      void startConversation();
+    }
+  }
+
+  function deleteReview() {
+    const messageId = reviewMessageId;
+    if (messageId === undefined) return;
+    reviewMessageId = undefined;
+    reviewResume?.();
+    reviewResume = undefined;
+    pipelineVersion += 1;
+    cancelActivePipeline?.();
+    cancelActivePipeline = undefined;
+    chatMessages = chatMessages.filter((message) => message.id < messageId);
+    stopConversation();
+    void startConversation().catch((error: unknown) => {
+      console.error('[Sunny] Failed to restart after deleting transcription:', error);
+      status = 'error';
+    });
   }
 
   const statusLabel = $derived(
@@ -359,10 +417,20 @@
     if (!response.ok) {
       throw new Error(`System prompt request failed: ${response.status} ${response.statusText}`);
     }
-    const prompt = (await response.text()).trim();
-    if (!prompt) throw new Error('System prompt endpoint returned an empty response.');
-    systemPrompt = prompt;
-    console.log('[Sunny] System prompt loaded:', { characterCount: prompt.length });
+    const payload = (await response.json()) as { prompts?: unknown };
+    if (!Array.isArray(payload.prompts)) {
+      throw new Error('System prompt endpoint returned an invalid prompt sequence.');
+    }
+    promptSequence = payload.prompts.filter((prompt): prompt is string => typeof prompt === 'string')
+      .map((prompt) => prompt.trim())
+      .filter(Boolean);
+    if (!promptSequence.length) throw new Error('System prompt endpoint returned an empty prompt sequence.');
+    promptIndex = 0;
+    systemPrompt = promptSequence[0];
+    console.log('[Sunny] Prompt sequence loaded:', {
+      promptCount: promptSequence.length,
+      firstPromptCharacterCount: systemPrompt.length,
+    });
   }
 
   async function speakSessionOpening() {
@@ -372,7 +440,8 @@
     const closingStart = systemPrompt.indexOf(closingMarker);
     hasAnnouncedReady = true;
     if (openingStart < 0 || closingStart <= openingStart) {
-      console.warn('[Sunny] System prompt has no session opening script; continuing without an opening announcement');
+      console.warn('[Sunny] First prompt has no embedded opening script; speaking the first prompt directly');
+      await speak(systemPrompt);
       return;
     }
     const opening = systemPrompt
@@ -394,6 +463,7 @@
         addChatMessage('status', 'Sunny is preparing the local response model.');
         await languageModel.warm();
       }
+      startingConversation = false;
       await startConversation();
     } catch (error) {
       console.error('[Sunny] Automatic welcome playback failed:', error);
@@ -415,18 +485,28 @@
     if (percent <= previous) return;
     loggedProgress.set(label, percent);
     downloadStatus = `Downloading ${label} model: ${percent}%`;
-    if (percent < 100) addChatMessage('status', downloadStatus);
+    downloadProgress = percent;
+    if (percent > 0 && percent < 100) {
+      if (!downloadStartedAt) downloadStartedAt = performance.now();
+      const elapsedMs = performance.now() - downloadStartedAt;
+      downloadRemainingMs = elapsedMs * ((100 - percent) / percent);
+    }
+    if (percent >= 100) {
+      downloadRemainingMs = 0;
+      downloadStartedAt = 0;
+    }
     console.log(`[Sunny] ${label} download: ${percent}%`);
   }
 
   function modelProgress(label: string, progress: number) {
     downloadingModel = `${label} model`;
-    if (progress < 100) activeModelDownload = true;
+    activeModelDownload = progress < 100;
     updateDownloadProgress(label, progress);
   }
 
   function modelDownloadState(state: string) {
     downloadStatus = state;
+    if (state.includes('ready') || state.includes('complete')) activeModelDownload = false;
   }
 
   function markModelDownloaded() {
@@ -592,7 +672,10 @@ ${text}`;
         return;
       }
 
-      const prompt = `${systemPrompt}
+      const nextPromptIndex = Math.min(promptIndex + 1, promptSequence.length - 1);
+      const activePrompt = promptSequence[nextPromptIndex] ?? systemPrompt;
+      promptIndex = nextPromptIndex;
+      const prompt = `${activePrompt}
 
 Conversation transcript:
 ${conversationContext()}
@@ -604,6 +687,8 @@ Assistant response:
       console.log('[Sunny] LLM request:', { prompt });
       console.log('[Sunny] Loading/using language model:', config?.models.language.name);
       const ttsQueue = createTtsQueue();
+      const currentPipelineVersion = ++pipelineVersion;
+      cancelActivePipeline = () => ttsQueue.fail(new Error('Conversation response cancelled for message review.'));
       let streamedChunkCount = 0;
       const generation = languageModel.generateStreaming(prompt, undefined, (chunk) => {
         streamedChunkCount += 1;
@@ -612,6 +697,7 @@ Assistant response:
       const speech = speakGeneratedChunks(ttsQueue);
       try {
         const generatedReply = await generation;
+        if (currentPipelineVersion !== pipelineVersion) return;
         const reply = keepSessionOpen(generatedReply.trim());
         console.log('[Sunny] Streaming LLM response:', { text: reply });
         if (streamedChunkCount === 0 && reply) {
@@ -624,6 +710,8 @@ Assistant response:
         ttsQueue.fail(error);
         await speech.catch(() => undefined);
         throw error;
+      } finally {
+        if (cancelActivePipeline) cancelActivePipeline = undefined;
       }
     } catch (error) {
       console.error('Voice conversation failed:', error);
@@ -638,6 +726,7 @@ Assistant response:
     } finally {
       processing = false;
       if (conversationActive && status !== 'ended') {
+        if (reviewMessageId !== undefined) return;
         void startConversation().catch((error: unknown) => {
           console.error('[Sunny] Failed to restart microphone detection:', error);
           status = 'error';
@@ -823,12 +912,14 @@ Assistant response:
     status = 'speaking';
     console.log('[Sunny] Input listening disabled during streaming TTS');
     await stopInputAnalyser();
+    await waitForReview();
     const first = await queue.next();
     if (first.done) throw new Error('Local language model returned no speakable response.');
 
     let currentText = first.value;
     let nextAudio = synthesizeSpeechChunk(currentText);
     while (true) {
+      await waitForReview();
       addChatMessage('assistant', currentText);
       await tick();
       const audio = await nextAudio;
@@ -843,7 +934,7 @@ Assistant response:
   }
 
   async function startConversation() {
-    if (startingConversation) {
+    if (startingConversation && inputAnalyser) {
       console.warn('[Sunny] Conversation start skipped: startup already in progress');
       return;
     }
@@ -853,6 +944,10 @@ Assistant response:
     conversationActive = true;
     sparkleVisible = true;
     status = 'listening';
+    manualSpeechStartedAt = 0;
+    manualSilenceStartedAt = 0;
+    manualSpeechSamples = [];
+    lastManualCaptureAt = 0;
     recordingStartedAt ??= Date.now();
     recordingElapsedMs = Date.now() - recordingStartedAt;
     lastSpeechActivityAt = performance.now();
@@ -965,7 +1060,14 @@ Assistant response:
 {/if}
 
 <main class="session-main">
-  <ChatThread messages={chatMessages} status={status} />
+  <ChatThread
+    messages={chatMessages}
+    status={status}
+    reviewMessageId={reviewMessageId}
+    onUserMessageClick={reviewUserMessage}
+    onDeleteReview={deleteReview}
+    onContinueReview={continueReview}
+  />
   <div
     class:hidden={!sparkleVisible}
     class="sparkle-overlay"
@@ -979,5 +1081,13 @@ Assistant response:
 </main>
 
 <footer class="session-footer">
+  {#if !modelsReady || activeModelDownload}
+    <DownloadProgress
+      title={downloadingModel}
+      progress={downloadProgress}
+      remainingMs={downloadRemainingMs}
+      status={downloadStatus}
+    />
+  {/if}
   <AudioControls bind:isPlaying={conversationActive} onToggle={toggleConversation} />
 </footer>

@@ -21,6 +21,15 @@
 
   let { config, onProgress, onDownloadStateChange }: Props = $props();
   let warmupPromise: Promise<void> | undefined;
+  type WebGpuAdapter = {
+    limits: {
+      maxBufferSize: number;
+      maxStorageBufferBindingSize: number;
+    };
+  };
+  type WebGpu = {
+    requestAdapter: (options?: { powerPreference?: 'low-power' | 'high-performance' }) => Promise<WebGpuAdapter | null>;
+  };
   let model = $derived(
     config.location === 'webllm'
       ? webllm.languageModel(config.name)
@@ -50,10 +59,33 @@
     return warmupPromise;
   }
 
+  async function requireWebGpu() {
+    const gpu = typeof navigator !== 'undefined'
+      ? (navigator as Navigator & { gpu?: WebGpu }).gpu
+      : undefined;
+    if (!gpu) {
+      throw new Error(
+        'This device or browser does not support WebGPU required for the 7B language model. Please use a more powerful device with WebGPU support.',
+      );
+    }
+    const adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (!adapter) {
+      throw new Error(
+        'No suitable WebGPU adapter is available for the 7B language model. Please switch to a more powerful device with a supported GPU.',
+      );
+    }
+    console.log('[Sunny] WebGPU adapter available for language model:', {
+      model: config.name,
+      maxBufferSize: adapter.limits.maxBufferSize,
+      maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+    });
+  }
+
   export async function prepare() {
     if (!['webllm', 'huggingface'].includes(config.location) || !model) {
       throw new Error(`Unsupported language model location: ${config.location}`);
     }
+    if (config.location === 'webllm') await requireWebGpu();
     const isCached =
       config.location === 'webllm'
         ? await isWebLLMModelCached(config.name)
@@ -69,8 +101,18 @@
     onDownloadStateChange('Downloading LLM model: 0%');
     onProgress(0);
     const options = { onProgress: (progress: { progress?: number }) => onProgress(progress.progress ?? 0) };
-    if (config.location === 'webllm') await preloadWebLLMModel(config.name, options);
-    else await preloadTransformersModel(config.name, options);
+    try {
+      if (config.location === 'webllm') await preloadWebLLMModel(config.name, options);
+      else await preloadTransformersModel(config.name, options);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/webgpu|gpu|memory|buffer|device|adapter/i.test(message)) {
+        throw new Error(
+          `This device could not load the 7B language model. Please switch to a more powerful device with a supported GPU. ${message}`,
+        );
+      }
+      throw error;
+    }
     onProgress(100);
     console.log('[Sunny] WebLLM model download complete:', config.name);
   }

@@ -7,9 +7,20 @@
   interface Props {
     messages: ChatMessage[];
     status: string;
+    reviewMessageId?: number;
+    onUserMessageClick?: (messageId: number) => void;
+    onDeleteReview?: () => void;
+    onContinueReview?: () => void;
   }
 
-  let { messages, status }: Props = $props();
+  let {
+    messages,
+    status,
+    reviewMessageId,
+    onUserMessageClick,
+    onDeleteReview,
+    onContinueReview,
+  }: Props = $props();
   let chatThread: HTMLDivElement | undefined;
 
   $effect(() => {
@@ -25,7 +36,23 @@
   {/if}
   {#each messages as message (message.id)}
     <div class:chat-user={message.role === 'user'} class:chat-status={message.role === 'status'} class="chat-row">
-      <p class="chat-bubble">{message.content}</p>
+      {#if message.role === 'user' && onUserMessageClick}
+        <button
+          class="chat-bubble chat-user-message"
+          type="button"
+          onclick={() => onUserMessageClick?.(message.id)}
+        >
+          {message.content}
+        </button>
+      {:else}
+        <p class="chat-bubble">{message.content}</p>
+      {/if}
+      {#if reviewMessageId === message.id}
+        <div class="message-review-actions">
+          <button type="button" onclick={() => onDeleteReview?.()}>Delete</button>
+          <button type="button" onclick={() => onContinueReview?.()}>Continue</button>
+        </div>
+      {/if}
     </div>
   {/each}
   {#if status === 'thinking'}

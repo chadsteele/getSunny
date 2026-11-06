@@ -44,6 +44,11 @@ button { font: inherit; user-select: none; -webkit-user-select: none; }
 .core-halo { position: absolute; width: 52%; aspect-ratio: 1; background: #e99e18; border-radius: 50%; filter: blur(25px); opacity: var(--spark-glow); }
 .core { width: 18%; aspect-ratio: 1; border-radius: 50%; background: #fff9d8; box-shadow: 0 0 12px 6px #fff3a3, 0 0 35px 20px #ffc844, 0 0 75px 30px #dc8e16; }
 .session-footer { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: end; justify-content: space-between; gap: 18px; padding-top: 10px; background: #020202e6; }
+.download-status { flex: 1; min-width: 0; color: #b9934b; font-size: 10px; letter-spacing: .04em; }
+.download-status-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.download-status small { display: block; overflow: hidden; color: #8e6e3a; text-overflow: ellipsis; white-space: nowrap; }
+.download-progress { width: 100%; height: 3px; overflow: hidden; border-radius: 999px; background: #3a2810; box-shadow: inset 0 0 4px #0a0703; }
+.download-progress span { display: block; height: 100%; border-radius: inherit; background: #efb64d; box-shadow: 0 0 8px #e6a52b; transition: width .25s linear; }
 .play-button { width: 75px; height: 75px; flex: 0 0 auto; border: 2px solid #e8ad3d; border-radius: 50%; color: #f5c45b; background: #090704; box-shadow: inset 0 0 13px #9f6519, 0 0 18px #9a5c14; display: grid; place-items: center; cursor: pointer; transition: transform .2s, box-shadow .2s; user-select: none; -webkit-user-select: none; }
 .play-button:hover { transform: scale(1.05); box-shadow: inset 0 0 18px #b77723, 0 0 28px #bc751e; }
 .play-button.playing { background: #1b1205; }
@@ -67,6 +72,9 @@ button { font: inherit; user-select: none; -webkit-user-select: none; }
 .chat-row.chat-user { justify-content: flex-end; }
 .chat-bubble { max-width: 82%; margin: 0; padding: 11px 14px; border: 1px solid #5b3e16; border-radius: 17px 17px 17px 4px; color: #f3cf82; background: #100b05; font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 5px 16px #0008; }
 .chat-user .chat-bubble { border-color: #9a6a22; border-radius: 17px 17px 4px 17px; color: #fff0bd; background: #33200a; }
+.chat-user-message { width: auto; max-width: 100%; font: inherit; text-align: left; cursor: pointer; }
+.message-review-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 5px; }
+.message-review-actions button { padding: 4px 8px; border: 1px solid #79551f; border-radius: 6px; color: #eeb64e; background: #160f06; cursor: pointer; }
 .chat-status .chat-bubble, .chat-typing { border-color: #4b3b24; color: #a98d5c; background: #080705; font-size: 12px; font-style: italic; }
 .chat-empty { margin: auto; color: #8e6e3a; font-size: 13px; text-align: center; }
 .recording-status { position: absolute; right: 3%; bottom: 1%; z-index: 4; width: min(180px, 48%); color: #b9934b; font-size: 10px; letter-spacing: .04em; pointer-events: none; }
