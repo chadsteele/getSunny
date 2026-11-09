@@ -55,8 +55,8 @@
       {/if}
       {#if reviewMessageId === message.id}
         <div class="message-review-actions">
-          <button type="button" onclick={() => onDeleteReview?.()}>Delete</button>
-          <button type="button" onclick={() => onContinueReview?.()}>Continue</button>
+          <button type="button" onclick={() => onDeleteReview?.()}>❌ Delete</button>
+          <button type="button" onclick={() => onContinueReview?.()}>👍 Accept</button>
         </div>
       {/if}
     </div>
@@ -136,6 +136,7 @@
     color: #eeb64e;
     background: #160f06;
     cursor: pointer;
+    margin-left:6px;
   }
 
   .chat-status .chat-bubble,
