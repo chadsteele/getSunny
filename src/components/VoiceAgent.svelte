@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import ChatThread from './ChatThread.svelte';
-  import AudioControls from './AudioControls.svelte';
-  import DownloadProgress from './DownloadProgress.svelte';
+  import Footer from './Footer.svelte';
   import LanguageModel from './LanguageModel.svelte';
   import RecordingStatus from './RecordingStatus.svelte';
   import Sparkle from './Sparkle.svelte';
@@ -16,14 +15,14 @@
     TranscriptionModelController,
   } from '../lib/model-config';
 
-  type Status = 'downloading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'ended' | 'error';
+  type Status =
+    'downloading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'ended' | 'error';
   type ChatRole = 'user' | 'assistant' | 'status';
   type ChatMessage = { id: number; role: ChatRole; content: string };
 
-
   const SILENCE_THRESHOLD = 0.08;
   const SILENCE_END_MS = 10 * 1000;
-  const TRANSCRIPTION_WARNING_COOLDOWN_MS = 20 * 1000;
+  const TRANSCRIPTION_WARNING_COOLDOWN_MS = 60 * 1000;
   const ENABLE_LLM = false;
   const KNOWN_VOCABULARY = ['Sunny', 'Mastering Money', 'MasterMoney.ai', 'NeuroRecursion'];
   const JOKES = [
@@ -109,7 +108,9 @@
     const availableResponses = EMPTY_TRANSCRIPTION_RESPONSES.filter(
       (response) => !recentTranscriptionWarnings.includes(response),
     );
-    const responses = availableResponses.length ? availableResponses : EMPTY_TRANSCRIPTION_RESPONSES;
+    const responses = availableResponses.length
+      ? availableResponses
+      : EMPTY_TRANSCRIPTION_RESPONSES;
     const response = responses[Math.floor(Math.random() * responses.length)];
     recentTranscriptionWarnings = [...recentTranscriptionWarnings.slice(-1), response];
     return response;
@@ -180,16 +181,16 @@
     status === 'downloading'
       ? 'Downloading...'
       : status === 'listening'
-      ? 'Listening...'
-      : status === 'thinking'
-        ? 'Thinking...'
-        : status === 'speaking'
-          ? 'Speaking...'
-          : status === 'paused'
-            ? 'Paused'
-            : status === 'ended'
-              ? 'Ended'
-              : 'Something went wrong',
+        ? 'Listening...'
+        : status === 'thinking'
+          ? 'Thinking...'
+          : status === 'speaking'
+            ? 'Speaking...'
+            : status === 'paused'
+              ? 'Paused'
+              : status === 'ended'
+                ? 'Ended'
+                : 'Something went wrong',
   );
 
   function speakDiagnostic(message: string) {
@@ -217,7 +218,8 @@
           lastStatusAnnouncement = 'session-opening';
           void speakSessionOpening().catch((error: unknown) => {
             console.error('[Sunny] Session opening failed:', error);
-            errorMessage = error instanceof Error ? error.message : 'Unable to speak the session opening.';
+            errorMessage =
+              error instanceof Error ? error.message : 'Unable to speak the session opening.';
             status = 'error';
           });
         }
@@ -230,9 +232,7 @@
     if (announcementKey === lastStatusAnnouncement) return;
     lastStatusAnnouncement = announcementKey;
     speakDiagnostic(
-      currentStatus === 'downloading'
-        ? `Downloading ${downloadingModel}`
-        : statusLabel,
+      currentStatus === 'downloading' ? `Downloading ${downloadingModel}` : statusLabel,
     );
   });
 
@@ -275,7 +275,11 @@
       analyser.getFloatTimeDomainData(data);
       const volume = Math.min(1, getRms(data) * 7);
       const now = performance.now();
-      if (analyser === outputAnalyser && now - outputDebugStartedAt < 4000 && now - lastOutputDebugAt >= 250) {
+      if (
+        analyser === outputAnalyser &&
+        now - outputDebugStartedAt < 4000 &&
+        now - lastOutputDebugAt >= 250
+      ) {
         console.log('[Sunny] Output analyser sample:', {
           volumePercent: Math.round(volume * 100),
           elapsedMs: Math.round(now - outputDebugStartedAt),
@@ -320,7 +324,11 @@
           manualSpeechSamples.push(...data);
           lastManualCaptureAt = now;
         }
-        if (manualSpeechStartedAt && manualSilenceStartedAt && now - manualSilenceStartedAt > 1800) {
+        if (
+          manualSpeechStartedAt &&
+          manualSilenceStartedAt &&
+          now - manualSilenceStartedAt > 1800
+        ) {
           const audio = new Float32Array(manualSpeechSamples);
           const captureStartedAt = manualSpeechStartedAt;
           manualSpeechStartedAt = 0;
@@ -337,7 +345,10 @@
             });
             void handleSpeech(audio, sampleRate);
           } else {
-            console.warn('[Sunny] Mic fallback discarded a segment that was too short:', audio.length);
+            console.warn(
+              '[Sunny] Mic fallback discarded a segment that was too short:',
+              audio.length,
+            );
           }
           if (!manualSpeechStartedAt && now - lastSpeechActivityAt >= SILENCE_END_MS) {
             addChatMessage('status', 'Listening ended after 10 seconds without speech.');
@@ -454,7 +465,11 @@
       throw new Error(`Model config request failed: ${response.status} ${response.statusText}`);
     }
     const loadedConfig = (await response.json()) as AppConfig;
-    if (!loadedConfig.models?.transcription || !loadedConfig.models.language || !loadedConfig.models.speech) {
+    if (
+      !loadedConfig.models?.transcription ||
+      !loadedConfig.models.language ||
+      !loadedConfig.models.speech
+    ) {
       throw new Error('Model config endpoint returned an incomplete configuration.');
     }
     return loadedConfig;
@@ -475,10 +490,12 @@
     if (!Array.isArray(payload.prompts)) {
       throw new Error('System prompt endpoint returned an invalid prompt sequence.');
     }
-    promptSequence = payload.prompts.filter((prompt): prompt is string => typeof prompt === 'string')
+    promptSequence = payload.prompts
+      .filter((prompt): prompt is string => typeof prompt === 'string')
       .map((prompt) => prompt.trim())
       .filter(Boolean);
-    if (!promptSequence.length) throw new Error('System prompt endpoint returned an empty prompt sequence.');
+    if (!promptSequence.length)
+      throw new Error('System prompt endpoint returned an empty prompt sequence.');
     promptIndex = 0;
     systemPrompt = promptSequence[0];
     console.log('[Sunny] Prompt sequence loaded:', {
@@ -494,7 +511,9 @@
     const closingStart = systemPrompt.indexOf(closingMarker);
     hasAnnouncedReady = true;
     if (openingStart < 0 || closingStart <= openingStart) {
-      console.warn('[Sunny] First prompt has no embedded opening script; speaking the first prompt directly');
+      console.warn(
+        '[Sunny] First prompt has no embedded opening script; speaking the first prompt directly',
+      );
       await speak(systemPrompt);
       return;
     }
@@ -521,7 +540,8 @@
       await startConversation();
     } catch (error) {
       console.error('[Sunny] Automatic welcome playback failed:', error);
-      errorMessage = error instanceof Error ? error.message : 'Unable to play the introductory welcome.';
+      errorMessage =
+        error instanceof Error ? error.message : 'Unable to play the introductory welcome.';
       addChatMessage(
         'status',
         'The browser blocked automatic audio playback. Press play once to start Sunny.',
@@ -571,7 +591,8 @@
     const buffer = new ArrayBuffer(44 + audioData.length * 2);
     const view = new DataView(buffer);
     const write = (offset: number, value: string) => {
-      for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index));
+      for (let index = 0; index < value.length; index += 1)
+        view.setUint8(offset + index, value.charCodeAt(index));
     };
     write(0, 'RIFF');
     view.setUint32(4, 36 + audioData.length * 2, true);
@@ -636,10 +657,14 @@
     const originalWords = transcriptWords(original);
     const candidateWords = transcriptWords(cleanedCandidate);
     if (!originalWords.length || !candidateWords.length) return original;
-    if (candidateWords.length > Math.max(originalWords.length + 3, Math.ceil(originalWords.length * 1.5))) {
+    if (
+      candidateWords.length >
+      Math.max(originalWords.length + 3, Math.ceil(originalWords.length * 1.5))
+    ) {
       return original;
     }
-    if (candidateWords.length < Math.max(1, Math.floor(originalWords.length * 0.5))) return original;
+    if (candidateWords.length < Math.max(1, Math.floor(originalWords.length * 0.5)))
+      return original;
     const originalSet = new Set(originalWords);
     const sharedWords = candidateWords.filter((word) => originalSet.has(word)).length;
     if (sharedWords / Math.max(originalSet.size, candidateWords.length) < 0.35) return original;
@@ -702,7 +727,9 @@ ${text}`;
       });
       const transcriptionStartedAt = performance.now();
       console.time('[Sunny] Transcription');
-      const transcription = await transcriptionModel.transcribeAudio(makeWav(audioData, sampleRate));
+      const transcription = await transcriptionModel.transcribeAudio(
+        makeWav(audioData, sampleRate),
+      );
       console.timeEnd('[Sunny] Transcription');
       console.log('[Sunny] Transcription timing:', {
         durationMs: Math.round(performance.now() - transcriptionStartedAt),
@@ -773,7 +800,8 @@ Assistant response:
       console.log('[Sunny] Loading/using language model:', config?.models.language.name);
       const ttsQueue = createTtsQueue();
       const currentPipelineVersion = ++pipelineVersion;
-      cancelActivePipeline = () => ttsQueue.fail(new Error('Conversation response cancelled for message review.'));
+      cancelActivePipeline = () =>
+        ttsQueue.fail(new Error('Conversation response cancelled for message review.'));
       let streamedChunkCount = 0;
       if (!languageModel) {
         throw new Error('Language model is required when LLM processing is enabled.');
@@ -808,7 +836,8 @@ Assistant response:
         conversationActive,
       });
       sparkleVisible = false;
-      errorMessage = error instanceof Error ? error.message : 'Unable to continue the conversation.';
+      errorMessage =
+        error instanceof Error ? error.message : 'Unable to continue the conversation.';
       addChatMessage('status', errorMessage);
       status = 'error';
     } finally {
@@ -938,22 +967,23 @@ Assistant response:
         contextState: outputContext?.state,
       });
     };
-    const mediaReady = outputAudio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
-      ? Promise.resolve()
-      : new Promise<void>((resolve, reject) => {
-          const handleReady = () => {
-            outputAudio?.removeEventListener('canplay', handleReady);
-            outputAudio?.removeEventListener('error', handleError);
-            resolve();
-          };
-          const handleError = () => {
-            outputAudio?.removeEventListener('canplay', handleReady);
-            outputAudio?.removeEventListener('error', handleError);
-            reject(new Error('TTS audio failed to load.'));
-          };
-          outputAudio?.addEventListener('canplay', handleReady, { once: true });
-          outputAudio?.addEventListener('error', handleError, { once: true });
-        });
+    const mediaReady =
+      outputAudio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+        ? Promise.resolve()
+        : new Promise<void>((resolve, reject) => {
+            const handleReady = () => {
+              outputAudio?.removeEventListener('canplay', handleReady);
+              outputAudio?.removeEventListener('error', handleError);
+              resolve();
+            };
+            const handleError = () => {
+              outputAudio?.removeEventListener('canplay', handleReady);
+              outputAudio?.removeEventListener('error', handleError);
+              reject(new Error('TTS audio failed to load.'));
+            };
+            outputAudio?.addEventListener('canplay', handleReady, { once: true });
+            outputAudio?.addEventListener('error', handleError, { once: true });
+          });
     outputAudio.load();
     await mediaReady;
     console.log('[Sunny] TTS media decoded enough to play:', {
@@ -1111,12 +1141,12 @@ Assistant response:
       await tick();
       await prepareModels();
     })().catch((error: unknown) => {
-        console.error('Unable to start voice conversation:', error);
-        errorMessage = error instanceof Error ? error.message : 'Microphone access is required.';
-        addChatMessage('status', errorMessage);
-        status = 'error';
-        conversationActive = false;
-      });
+      console.error('Unable to start voice conversation:', error);
+      errorMessage = error instanceof Error ? error.message : 'Microphone access is required.';
+      addChatMessage('status', errorMessage);
+      status = 'error';
+      conversationActive = false;
+    });
     return () => {
       stopConversation('ended');
       void stopInputAnalyser();
@@ -1151,32 +1181,59 @@ Assistant response:
 <main class="session-main">
   <ChatThread
     messages={chatMessages}
-    status={status}
-    reviewMessageId={reviewMessageId}
+    {status}
+    {reviewMessageId}
     onUserMessageClick={reviewUserMessage}
     onDeleteReview={deleteReview}
     onContinueReview={continueReview}
   />
-  <div
-    class:hidden={!sparkleVisible}
-    class="sparkle-overlay"
-    aria-hidden={!sparkleVisible}
-  >
-    <Sparkle intensity={intensity} />
+  <div class:hidden={!sparkleVisible} class="sparkle-overlay" aria-hidden={!sparkleVisible}>
+    <Sparkle {intensity} />
   </div>
   {#if conversationActive && status === 'listening'}
     <RecordingStatus elapsedMs={recordingElapsedMs} />
   {/if}
 </main>
 
-<footer class="session-footer">
-  {#if !modelsReady || activeModelDownload}
-    <DownloadProgress
-      title={downloadingModel}
-      progress={downloadProgress}
-      remainingMs={downloadRemainingMs}
-      status={downloadStatus}
-    />
-  {/if}
-  <AudioControls bind:isPlaying={conversationActive} onToggle={toggleConversation} />
-</footer>
+<Footer
+  {modelsReady}
+  {activeModelDownload}
+  {downloadingModel}
+  {downloadProgress}
+  {downloadRemainingMs}
+  {downloadStatus}
+  isPlaying={conversationActive}
+  onToggle={toggleConversation}
+/>
+
+<style>
+  .session-main {
+    flex: 1;
+    width: calc(100% + 60px);
+    min-width: 0;
+    min-height: 0;
+    margin-left: -30px;
+    position: static;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+  .sparkle-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+  }
+  .sparkle-overlay.hidden {
+    display: none;
+  }
+  @media (min-width: 600px) {
+    .session-main {
+      width: calc(100% + 92px);
+      margin-left: -46px;
+    }
+  }
+</style>

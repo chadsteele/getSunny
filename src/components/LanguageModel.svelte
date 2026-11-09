@@ -28,7 +28,9 @@
     };
   };
   type WebGpu = {
-    requestAdapter: (options?: { powerPreference?: 'low-power' | 'high-performance' }) => Promise<WebGpuAdapter | null>;
+    requestAdapter: (options?: {
+      powerPreference?: 'low-power' | 'high-performance';
+    }) => Promise<WebGpuAdapter | null>;
   };
   let model = $derived(
     config.location === 'webllm'
@@ -60,9 +62,10 @@
   }
 
   async function requireWebGpu() {
-    const gpu = typeof navigator !== 'undefined'
-      ? (navigator as Navigator & { gpu?: WebGpu }).gpu
-      : undefined;
+    const gpu =
+      typeof navigator !== 'undefined'
+        ? (navigator as Navigator & { gpu?: WebGpu }).gpu
+        : undefined;
     if (!gpu) {
       throw new Error(
         'This device or browser does not support WebGPU required for the 7B language model. Please use a more powerful device with WebGPU support.',
@@ -100,7 +103,9 @@
     console.log('[Sunny] Starting LLM model download:', config.name);
     onDownloadStateChange('Downloading LLM model: 0%');
     onProgress(0);
-    const options = { onProgress: (progress: { progress?: number }) => onProgress(progress.progress ?? 0) };
+    const options = {
+      onProgress: (progress: { progress?: number }) => onProgress(progress.progress ?? 0),
+    };
     try {
       if (config.location === 'webllm') await preloadWebLLMModel(config.name, options);
       else await preloadTransformersModel(config.name, options);
@@ -142,7 +147,8 @@
         ...(maxTokens === undefined ? {} : { maxTokens }),
       };
       const response = await generateText(generationOptions);
-      if (!response.text.trim()) throw new Error('Local language model returned an empty response.');
+      if (!response.text.trim())
+        throw new Error('Local language model returned an empty response.');
       console.log('[Sunny] Local language generation complete:', {
         characterCount: response.text.length,
         finishReason: response.finishReason,

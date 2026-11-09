@@ -24,10 +24,13 @@
   let { config, wasmPaths, onProgress, onDownloadStateChange, onDownloaded }: Props = $props();
   let worker: Worker | undefined;
   let nextRequestId = 0;
-  const pendingRequests = new Map<number, {
-    resolve: (audio: Blob) => void;
-    reject: (error: Error) => void;
-  }>();
+  const pendingRequests = new Map<
+    number,
+    {
+      resolve: (audio: Blob) => void;
+      reject: (error: Error) => void;
+    }
+  >();
 
   function initializeWorker() {
     if (worker) return Promise.resolve();

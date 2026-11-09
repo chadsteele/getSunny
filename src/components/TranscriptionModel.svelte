@@ -1,10 +1,6 @@
 <script lang="ts">
   import { transcribe } from '@localmode/core';
-  import {
-    isModelCached,
-    preloadModel,
-    transformers,
-  } from '@localmode/transformers';
+  import { isModelCached, preloadModel, transformers } from '@localmode/transformers';
   import { logger as console } from '../lib/logger';
   import type { ModelConfig } from '../lib/model-config';
 
@@ -45,11 +41,7 @@
     for (let index = 0; index < sampleCount; index += 1) {
       const sample = view.getInt16(dataOffset + index * 2, true) / 0x8000;
       const amplified = Math.max(-1, Math.min(1, sample * gain));
-      view.setInt16(
-        dataOffset + index * 2,
-        amplified * (amplified < 0 ? 0x8000 : 0x7fff),
-        true,
-      );
+      view.setInt16(dataOffset + index * 2, amplified * (amplified < 0 ? 0x8000 : 0x7fff), true);
     }
     console.log('[Sunny] Retrying transcription with quiet-audio gain:', {
       gain: Number(gain.toFixed(2)),
@@ -89,9 +81,10 @@
         const highPassed = input - previousInput + previousOutput * 0.995;
         previousInput = input;
         const distanceFromFloor = Math.abs(highPassed);
-        const gate = distanceFromFloor < gateThreshold
-          ? distanceFromFloor / Math.max(gateThreshold, 0.0001)
-          : 1;
+        const gate =
+          distanceFromFloor < gateThreshold
+            ? distanceFromFloor / Math.max(gateThreshold, 0.0001)
+            : 1;
         const output = highPassed * gate;
         previousOutput = output;
         view.setInt16(

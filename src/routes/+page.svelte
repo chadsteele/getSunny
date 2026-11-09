@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AppShell from '../components/AppShell.svelte';
+  import Layout from '../components/Layout.svelte';
   import Header from '../components/Header.svelte';
   import VoiceAgent from '../components/VoiceAgent.svelte';
   import '../styles.css';
@@ -12,7 +12,7 @@
   />
 </svelte:head>
 
-<AppShell>
+<Layout>
   <Header />
   <VoiceAgent />
-</AppShell>
+</Layout>
