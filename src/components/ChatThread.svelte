@@ -32,7 +32,7 @@
 
 <div class="chat-thread" bind:this={chatThread} aria-live="polite" aria-label="Conversation">
   {#if messages.length === 0}
-    <p class="chat-empty">Loading Sunny. Please wait. Ensure volume is turned up.</p>
+    <p class="chat-empty">Loading...<br/>Ensure volume is turned up.</p>
   {/if}
   {#each messages as message (message.id)}
     <div class:chat-user={message.role === 'user'} class:chat-status={message.role === 'status'} class="chat-row">

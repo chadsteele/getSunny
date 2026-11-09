@@ -105,11 +105,48 @@
     });
   }
 
+  function createWarmupAudio() {
+    const sampleRate = 16_000;
+    const sampleCount = sampleRate;
+    const buffer = new ArrayBuffer(44 + sampleCount * 2);
+    const view = new DataView(buffer);
+    const write = (offset: number, value: string) => {
+      for (let index = 0; index < value.length; index += 1) {
+        view.setUint8(offset + index, value.charCodeAt(index));
+      }
+    };
+    write(0, 'RIFF');
+    view.setUint32(4, 36 + sampleCount * 2, true);
+    write(8, 'WAVE');
+    write(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    write(36, 'data');
+    view.setUint32(40, sampleCount * 2, true);
+    return new Blob([buffer], { type: 'audio/wav' });
+  }
+
+  async function warmModel() {
+    const warmupStartedAt = performance.now();
+    console.log('[Sunny] Warming transcription model:', config.name);
+    await transcribe({ model, audio: createWarmupAudio() });
+    console.log('[Sunny] Transcription model warmup complete:', {
+      model: config.name,
+      durationMs: Math.round(performance.now() - warmupStartedAt),
+    });
+  }
+
   export async function prepare() {
     if (await isModelCached(config.name)) {
       console.log('[Sunny] Transcription model already cached:', config.name);
       onDownloadStateChange('Transcription model ready (cached)');
       onProgress(100);
+      await warmModel();
       return;
     }
 
@@ -121,6 +158,7 @@
     });
     onProgress(100);
     console.log('[Sunny] Transcription model download complete:', config.name);
+    await warmModel();
   }
 
   export async function transcribeAudio(audio: Blob) {

@@ -18,7 +18,7 @@ export interface AppConfig {
 
 export interface TranscriptionModelController {
   prepare: () => Promise<void>;
-  transcribeAudio: (audio: Blob) => Promise<{ text: string; confidence?: number }>;
+  transcribeAudio: (audio: Blob) => Promise<{ text: string }>;
 }
 
 export interface LanguageModelController {

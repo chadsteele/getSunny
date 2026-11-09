@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import {
     download as downloadPiperVoice,
+    remove as removePiperVoice,
     stored as storedPiperVoices,
   } from '@realtimex/piper-tts-web';
   import { logger as console } from '../lib/logger';
@@ -64,13 +65,17 @@
     return workerReady;
   }
 
-  onDestroy(() => {
+  function resetWorker() {
     worker?.terminate();
     worker = undefined;
     for (const { reject } of pendingRequests.values()) {
-      reject(new Error('Piper TTS worker stopped.'));
+      reject(new Error('Piper TTS worker reset during voice recovery.'));
     }
     pendingRequests.clear();
+  }
+
+  onDestroy(() => {
+    resetWorker();
   });
 
   export async function prepare() {
@@ -111,7 +116,29 @@
       });
     }
     const workerStartedAt = performance.now();
-    await initializeWorker();
+    try {
+      await initializeWorker();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (!errorMessage.includes('No graph was found in the protobuf')) throw error;
+
+      console.warn('[Sunny] Cached Piper voice appears invalid; removing and redownloading:', {
+        voice: config.name,
+        error: errorMessage,
+      });
+      resetWorker();
+      await removePiperVoice(config.name);
+      onProgress(0);
+      onDownloadStateChange('Repairing Speech model: 0%');
+      await downloadPiperVoice(config.name, (progress) => {
+        const percent = progress.total ? (progress.loaded / progress.total) * 100 : 0;
+        onProgress(percent);
+        onDownloadStateChange(`Repairing Speech model: ${Math.round(percent)}%`);
+      });
+      onProgress(100);
+      onDownloadStateChange('Speech model repaired');
+      await initializeWorker();
+    }
     console.log('[Sunny] Piper worker session ready:', {
       voice: config.name,
       durationMs: Math.round(performance.now() - workerStartedAt),
