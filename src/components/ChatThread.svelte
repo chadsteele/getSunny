@@ -136,7 +136,7 @@
     color: #eeb64e;
     background: #160f06;
     cursor: pointer;
-    margin-left:6px;
+    margin-left: 6px;
   }
 
   .chat-status .chat-bubble,

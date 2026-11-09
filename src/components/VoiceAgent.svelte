@@ -23,6 +23,8 @@
   const SILENCE_THRESHOLD = 0.08;
   const SILENCE_END_MS = 10 * 1000;
   const TRANSCRIPTION_WARNING_COOLDOWN_MS = 60 * 1000;
+  const FIRST_PERSON_WARNING =
+    'This is not personal. In your story, refer to yourself by name instead of using first-person terms.';
   const ENABLE_LLM = false;
   const KNOWN_VOCABULARY = ['Sunny', 'Mastering Money', 'MasterMoney.ai', 'NeuroRecursion'];
   const JOKES = [
@@ -636,6 +638,42 @@
     return text.toLowerCase().match(/[a-z0-9]+(?:['.-][a-z0-9]+)*/g) ?? [];
   }
 
+  function findFirstPersonTerms(text: string) {
+    const pattern = new RegExp(
+      '\\b(' +
+        [
+          'I',
+          'me',
+          'my',
+          'mine',
+          'myself',
+          'we',
+          'us',
+          'our',
+          'ours',
+          'ourselves',
+          "I'm",
+          "I've",
+          "I'd",
+          "I'll",
+          "we're",
+          "we've",
+          "we'd",
+          "we'll",
+        ].join('|') +
+        ')\\b',
+      'gi',
+    );
+    const matches = text.match(pattern) ?? [];
+    const normalized = matches.map((match) => match.toLowerCase());
+
+    return {
+      found: normalized.length > 0,
+      matches: normalized,
+      unique: [...new Set(normalized)],
+    };
+  }
+
   function isSuspiciousTranscript(text: string) {
     const words = transcriptWords(text);
     if (!words.length) return false;
@@ -763,6 +801,16 @@ ${text}`;
         return;
       }
       addChatMessage('user', text);
+      const firstPersonTerms = findFirstPersonTerms(text);
+      const includesMyName = /\bmy\s+name\b/i.test(text);
+      if (firstPersonTerms.found && !includesMyName) {
+        console.warn('[Sunny] First-person terms detected without "my name":', {
+          terms: firstPersonTerms.unique,
+          text,
+        });
+        addChatMessage('status', FIRST_PERSON_WARNING);
+        await speak(FIRST_PERSON_WARNING, true, false);
+      }
       if (text.toLowerCase() === 'good night sunny') {
         console.log('Goodbye from Sunny.');
         status = 'ended';
