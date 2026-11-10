@@ -40,7 +40,7 @@ export interface SpeechModelController {
 export const defaultAppConfig: AppConfig = {
   models: {
     transcription: {
-      name: 'onnx-community/moonshine-tiny-ONNX',
+      name: 'onnx-community/granite-4.0-1b-speech-ONNX',
       location: 'huggingface',
     },
     language: {

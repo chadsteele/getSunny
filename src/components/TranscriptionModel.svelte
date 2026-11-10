@@ -1,4 +1,10 @@
 <script lang="ts">
+  import {
+    AutoProcessor,
+    GraniteSpeechForConditionalGeneration,
+    Tensor,
+  } from '@huggingface/transformers';
+  import type { ProgressInfo } from '@huggingface/transformers';
   import { transcribe } from '@localmode/core';
   import { isModelCached, preloadModel, transformers } from '@localmode/transformers';
   import { logger as console } from '../lib/logger';
@@ -11,7 +17,160 @@
   }
 
   let { config, onProgress, onDownloadStateChange }: Props = $props();
+  let isGraniteSpeech = $derived(config.name === 'onnx-community/granite-4.0-1b-speech-ONNX');
   let model = $derived(transformers.speechToText(config.name));
+  let graniteProcessorPromise: ReturnType<typeof AutoProcessor.from_pretrained> | undefined;
+  let graniteModelPromise:
+    ReturnType<typeof GraniteSpeechForConditionalGeneration.from_pretrained> | undefined;
+
+  type WebGpuAdapter = {
+    limits: {
+      maxBufferSize: number;
+      maxStorageBufferBindingSize: number;
+    };
+  };
+  type WebGpu = {
+    requestAdapter: (options?: {
+      powerPreference?: 'low-power' | 'high-performance';
+    }) => Promise<WebGpuAdapter | null>;
+  };
+
+  function reportGraniteProgress(label: string, progress: ProgressInfo) {
+    if (!('progress' in progress)) return;
+    const percentage = Math.round(progress.progress);
+    if (progress.status === 'progress_total') {
+      onProgress(percentage);
+      onDownloadStateChange(`${label}: ${percentage}%`);
+    }
+    console.log(`[Sunny] Granite Speech ${label.toLowerCase()}:`, {
+      file: 'file' in progress ? progress.file : 'all files',
+      progress: percentage,
+    });
+  }
+
+  async function requireGraniteWebGpu() {
+    if (!isGraniteSpeech) return;
+    const gpu =
+      typeof navigator !== 'undefined'
+        ? (navigator as Navigator & { gpu?: WebGpu }).gpu
+        : undefined;
+    if (!gpu) {
+      throw new Error(
+        'Granite Speech requires WebGPU, but this browser does not expose WebGPU. Use a supported browser with hardware acceleration enabled.',
+      );
+    }
+
+    const adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (!adapter) {
+      throw new Error(
+        'Granite Speech requires a usable WebGPU adapter, but no GPU adapter is available. Update your graphics drivers, enable hardware acceleration, or use a device with a supported GPU.',
+      );
+    }
+
+    console.log('[Sunny] Granite Speech WebGPU adapter available:', {
+      maxBufferSize: adapter.limits.maxBufferSize,
+      maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+    });
+  }
+
+  function readWavAudio(audio: Blob) {
+    return audio.arrayBuffer().then((buffer) => {
+      const view = new DataView(buffer);
+      if (view.getUint32(0, false) !== 0x52494646 || view.getUint32(8, false) !== 0x57415645) {
+        throw new Error('Granite Speech requires WAV audio input.');
+      }
+
+      const sampleRate = view.getUint32(24, true);
+      const channels = view.getUint16(22, true);
+      const bitsPerSample = view.getUint16(34, true);
+      const dataOffset = 44;
+      if (sampleRate !== 16_000 || channels !== 1 || bitsPerSample !== 16) {
+        throw new Error('Granite Speech requires 16 kHz, mono, 16-bit WAV audio.');
+      }
+
+      const sampleCount = Math.floor((buffer.byteLength - dataOffset) / 2);
+      const samples = new Float32Array(sampleCount);
+      for (let index = 0; index < sampleCount; index += 1) {
+        samples[index] = view.getInt16(dataOffset + index * 2, true) / 0x8000;
+      }
+      return samples;
+    });
+  }
+
+  async function getGraniteProcessor() {
+    if (!graniteProcessorPromise) {
+      console.log('[Sunny] Loading Granite Speech processor:', config.name);
+      graniteProcessorPromise = AutoProcessor.from_pretrained(config.name, {
+        progress_callback: (progress: ProgressInfo) =>
+          reportGraniteProgress('processor download', progress),
+      });
+    }
+    return graniteProcessorPromise;
+  }
+
+  async function getGraniteModel() {
+    if (!graniteModelPromise) {
+      await requireGraniteWebGpu();
+      console.log('[Sunny] Loading Granite Speech WebGPU model:', config.name);
+      graniteModelPromise = GraniteSpeechForConditionalGeneration.from_pretrained(config.name, {
+        dtype: {
+          embed_tokens: 'q4',
+          audio_encoder: 'q4',
+          decoder_model_merged: 'q4',
+        },
+        device: 'webgpu',
+        progress_callback: (progress) => reportGraniteProgress('model download', progress),
+      });
+    }
+    return graniteModelPromise;
+  }
+
+  async function transcribeWithGranite(audio: Blob, maxNewTokens = 256) {
+    const processor = await getGraniteProcessor();
+    console.log('[Sunny] Granite Speech processor ready:', config.name);
+    const graniteModel = await getGraniteModel();
+    console.log('[Sunny] Granite Speech model ready:', config.name);
+    onProgress(100);
+    onDownloadStateChange('Transcription model ready');
+    const samples = await readWavAudio(audio);
+    const messages = [
+      {
+        role: 'user',
+        content: '<|audio|>can you transcribe the speech into a written format?',
+      },
+    ];
+    const text = processor.apply_chat_template(messages, {
+      add_generation_prompt: false,
+      tokenize: false,
+    });
+    const inputs = await processor(text, samples);
+    console.log('[Sunny] Running Granite Speech transcription:', {
+      audioSamples: samples.length,
+      maxNewTokens,
+    });
+    const generatedIds = (await withTimeout(
+      graniteModel.generate({
+        ...inputs,
+        max_new_tokens: maxNewTokens,
+      }),
+      120_000,
+      `Granite Speech inference timed out after 120 seconds for ${config.name}.`,
+    )) as Tensor;
+    const promptLength = inputs.input_ids.dims.at(-1);
+    const generatedTexts = processor.batch_decode(generatedIds.slice(null, [promptLength, null]), {
+      skip_special_tokens: true,
+    });
+    return { text: generatedTexts[0]?.trim() ?? '' };
+  }
+
+  function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  }
 
   async function boostQuietAudio(audio: Blob) {
     const buffer = await audio.arrayBuffer();
@@ -127,7 +286,8 @@
   async function warmModel() {
     const warmupStartedAt = performance.now();
     console.log('[Sunny] Warming transcription model:', config.name);
-    await transcribe({ model, audio: createWarmupAudio() });
+    if (isGraniteSpeech) await transcribeWithGranite(createWarmupAudio(), 32);
+    else await transcribe({ model, audio: createWarmupAudio() });
     console.log('[Sunny] Transcription model warmup complete:', {
       model: config.name,
       durationMs: Math.round(performance.now() - warmupStartedAt),
@@ -135,10 +295,13 @@
   }
 
   export async function prepare() {
+    await requireGraniteWebGpu();
     if (await isModelCached(config.name)) {
       console.log('[Sunny] Transcription model already cached:', config.name);
-      onDownloadStateChange('Transcription model ready (cached)');
-      onProgress(100);
+      onDownloadStateChange(
+        isGraniteSpeech ? 'Preparing Granite Speech model' : 'Transcription model ready (cached)',
+      );
+      if (!isGraniteSpeech) onProgress(100);
       await warmModel();
       return;
     }
@@ -147,15 +310,19 @@
     onDownloadStateChange('Downloading Transcription model: 0%');
     onProgress(0);
     await preloadModel(config.name, {
-      onProgress: (progress) => onProgress(progress.progress ?? 0),
+      onProgress: (progress) => {
+        const percentage = Math.round(progress.progress ?? 0);
+        onProgress(isGraniteSpeech ? Math.min(99, percentage) : percentage);
+      },
     });
-    onProgress(100);
+    if (!isGraniteSpeech) onProgress(100);
     console.log('[Sunny] Transcription model download complete:', config.name);
     await warmModel();
   }
 
   export async function transcribeAudio(audio: Blob) {
     const preprocessedAudio = await preprocessAudio(audio);
+    if (isGraniteSpeech) return transcribeWithGranite(preprocessedAudio);
     const result = await transcribe({ model, audio: preprocessedAudio });
     if (result.text.trim() || preprocessedAudio === audio) return result;
 
