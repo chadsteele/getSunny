@@ -42,10 +42,6 @@
       onProgress(percentage);
       onDownloadStateChange(`${label}: ${percentage}%`);
     }
-    console.log(`[Sunny] Granite Speech ${label.toLowerCase()}:`, {
-      file: 'file' in progress ? progress.file : 'all files',
-      progress: percentage,
-    });
   }
 
   async function requireGraniteWebGpu() {
@@ -114,9 +110,9 @@
       console.log('[Sunny] Loading Granite Speech WebGPU model:', config.name);
       graniteModelPromise = GraniteSpeechForConditionalGeneration.from_pretrained(config.name, {
         dtype: {
-          embed_tokens: 'q4',
-          audio_encoder: 'q4',
-          decoder_model_merged: 'q4',
+          embed_tokens: 'q4f16',
+          audio_encoder: 'q4f16',
+          decoder_model_merged: 'q4f16',
         },
         device: 'webgpu',
         progress_callback: (progress) => reportGraniteProgress('model download', progress),
@@ -144,6 +140,12 @@
       tokenize: false,
     });
     const inputs = await processor(text, samples);
+    console.log('[Sunny] Granite Speech input tensors:', {
+      inputIds: inputs.input_ids.dims,
+      attentionMask: inputs.attention_mask?.dims,
+      inputFeatures: inputs.input_features?.dims,
+      inputFeaturesMask: inputs.input_features_mask?.dims,
+    });
     console.log('[Sunny] Running Granite Speech transcription:', {
       audioSamples: samples.length,
       maxNewTokens,

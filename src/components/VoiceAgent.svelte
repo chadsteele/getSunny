@@ -571,7 +571,7 @@
       downloadRemainingMs = 0;
       downloadStartedAt = 0;
     }
-    console.log(`[Sunny] ${label} download: ${percent}%`);
+    // console.log(`[Sunny] ${label} download: ${percent}%`);
   }
 
   function modelProgress(label: string, progress: number) {
