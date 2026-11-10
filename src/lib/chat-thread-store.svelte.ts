@@ -48,8 +48,17 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
 
   function add(role: ChatRole, content: string) {
     const message = content.trim();
+    if (!message && role !== 'assistant') return;
+    const id = nextMessageId++;
+    messages.push({ id, role, content: message });
+    persist();
+    return id;
+  }
+
+  function update(messageId: number, content: string) {
+    const message = messages.find(({ id }) => id === messageId);
     if (!message) return;
-    messages.push({ id: nextMessageId++, role, content: message });
+    message.content = content;
     persist();
   }
 
@@ -71,6 +80,7 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     },
     restore,
     add,
+    update,
     removeMessagesBefore,
     context,
   };

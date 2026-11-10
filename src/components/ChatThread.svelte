@@ -33,9 +33,8 @@
 <div class="chat-thread" bind:this={chatThread} aria-live="polite" aria-label="Conversation">
   {#if messages.length === 0}
     <p class="chat-empty">
-      Loading...<br />If this is your first time, this will take awhile depending on your device and
-      bandwidth.  The Ai models are large.   If you're not on wifi, we recommend connecting to one.<br /><br/>Ensure volume is turned
-      up.
+      Connecting to Sunny...<br />The voice services may take a moment to respond the first time.<br
+      /><br />Ensure volume is turned up.
     </p>
   {/if}
   {#each messages as message (message.id)}

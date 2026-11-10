@@ -2,7 +2,7 @@
 
 A tiny Svelte experience inspired by the supplied mobile reference. The central sparkle responds to live frequency data from either the built-in ambient tone or an audio file selected by the user.
 
-The app also includes a fully local voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). It uses Silero VAD, Moonshine STT, a local WebLLM response, and Kokoro TTS. The existing [`Sparkle.svelte`](./src/components/Sparkle.svelte) and [`AudioControls.svelte`](./src/components/AudioControls.svelte) components remain the visual sparkle and pause/resume control.
+The app uses a server-backed streaming voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Audio is transcribed by Deepgram, responses stream from Gemini 2.5 Flash Lite, and sentence audio is synthesized by OpenAI TTS-1. The existing [`Sparkle.svelte`](./src/components/Sparkle.svelte) and [`AudioControls.svelte`](./src/components/AudioControls.svelte) components remain the visual sparkle and pause/resume control.
 
 ## Local development
 
@@ -11,11 +11,19 @@ npm install
 npm run dev
 ```
 
-The voice loop requires microphone permission and downloads local model files on first use. The required packages are:
+`npm run dev` starts Vite on port 5173 and the Netlify Functions server on port
+9999. Vite proxies `/.netlify/functions/*` requests to the local functions.
+Open `http://localhost:5173`.
+
+The voice loop requires microphone permission and server-side API keys. No AI models are downloaded to the browser.
 
 ```bash
-npm install vad-web @localmode/core @localmode/transformers @localmode/webllm
+DEEPGRAM_API_KEY=...
+GEMINI_API_KEY=...
+OPENAI_API_KEY=...
 ```
+
+Configure these variables in Netlify under **Site configuration → Environment variables**. Never expose them in `PUBLIC_` variables or client-side code.
 
 The app is mobile-first and becomes a framed phone layout on larger screens.
 
@@ -47,3 +55,13 @@ Import the GitHub repository into Netlify. The included [`netlify.toml`](./netli
 - Publish directory: `dist`
 
 No environment variables are required.
+## Development requirements
+
+Use Node.js 22 or newer. The repository includes an [.nvmrc](./.nvmrc) file for
+`nvm` users:
+
+```bash
+nvm install
+nvm use
+npm install
+```

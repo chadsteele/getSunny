@@ -21,7 +21,8 @@ export const logger = {
   timeEnd: (label: string) => {
     const startedAt = timers.get(label);
     timers.delete(label);
-    const elapsed = startedAt === undefined ? 'unknown' : `${(performance.now() - startedAt).toFixed(1)} ms`;
+    const elapsed =
+      startedAt === undefined ? 'unknown' : `${(performance.now() - startedAt).toFixed(1)} ms`;
     write('debug', [`${label}: ${elapsed}`]);
   },
 };
