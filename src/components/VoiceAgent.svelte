@@ -97,6 +97,7 @@
   let languageModel = $state<LanguageModelController | undefined>();
   let speechModel = $state<SpeechModelController | undefined>();
   let modelPreparation: Promise<void> | undefined;
+  let transcriptionPreparation: Promise<void> | undefined;
   let remainingModelPreparation: Promise<void> | undefined;
   let hasAnnouncedReady = false;
   let downloadingOccurred = false;
@@ -435,15 +436,16 @@
         }
         console.log('[Sunny] Preparing text-to-speech model before other models');
         await speechModel.prepare();
-        downloadStatus = 'Introduction ready — preparing other models';
+        downloadStatus = 'TTS ready — preparing transcription and language models';
         modelsReady = true;
+        transcriptionPreparation = transcriptionModel.prepare();
         remainingModelPreparation = (async () => {
           if (ENABLE_LLM) {
             await languageModel?.prepare();
           } else {
             console.log('[Sunny] LLM processing disabled; skipping language model preparation');
           }
-          await transcriptionModel.prepare();
+          await transcriptionPreparation;
         })();
         void beginWelcome();
         await remainingModelPreparation;
@@ -519,6 +521,7 @@
     startingConversation = true;
     errorMessage = '';
     try {
+      await transcriptionPreparation;
       await speakSessionOpening();
       await remainingModelPreparation;
       welcomePlayed = true;
