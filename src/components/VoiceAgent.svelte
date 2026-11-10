@@ -26,6 +26,7 @@
   const FIRST_PERSON_WARNING =
     'This is not personal. In your story, refer to yourself by name instead of using first-person terms.';
   const ENABLE_LLM = false;
+  const CHAT_THREAD_STORAGE_KEY = 'sunny-chat-thread';
   const KNOWN_VOCABULARY = ['Sunny', 'Mastering Money', 'MasterMoney.ai', 'NeuroRecursion'];
   const JOKES = [
     'I told my budget a joke, but it needed more interest.',
@@ -61,6 +62,7 @@
   let modelsReady = $state(false);
   let welcomePlayed = $state(false);
   let chatMessages = $state<ChatMessage[]>([]);
+  let chatThreadHydrated = false;
   let nextMessageId = 0;
   let errorMessage = $state('');
   let downloadStatus = $state('Preparing voice models...');
@@ -105,6 +107,50 @@
   let lastStatusAnnouncement = '';
   let recentTranscriptionWarnings: string[] = [];
   const loggedProgress = new Map<string, number>();
+
+  function restoreChatThread() {
+    if (typeof localStorage === 'undefined') {
+      chatThreadHydrated = true;
+      return;
+    }
+    try {
+      const stored = JSON.parse(localStorage.getItem(CHAT_THREAD_STORAGE_KEY) ?? 'null') as unknown;
+      if (!Array.isArray(stored)) {
+        chatThreadHydrated = true;
+        return;
+      }
+      const restored = stored.filter(
+        (message): message is ChatMessage =>
+          typeof message === 'object' &&
+          message !== null &&
+          typeof (message as ChatMessage).id === 'number' &&
+          ['user', 'assistant', 'status'].includes((message as ChatMessage).role) &&
+          typeof (message as ChatMessage).content === 'string',
+      );
+      chatMessages = restored;
+      nextMessageId = restored.reduce(
+        (highestId, message) => Math.max(highestId, message.id + 1),
+        0,
+      );
+      console.log('[Sunny] Restored chat thread from browser storage:', {
+        messageCount: restored.length,
+      });
+    } catch (error) {
+      console.warn('[Sunny] Unable to restore chat thread from browser storage:', error);
+    } finally {
+      chatThreadHydrated = true;
+    }
+  }
+
+  $effect(() => {
+    const messages = chatMessages;
+    if (!chatThreadHydrated || typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(CHAT_THREAD_STORAGE_KEY, JSON.stringify(messages));
+    } catch (error) {
+      console.warn('[Sunny] Unable to persist chat thread to browser storage:', error);
+    }
+  });
 
   function chooseTranscriptionWarning() {
     const availableResponses = EMPTY_TRANSCRIPTION_RESPONSES.filter(
@@ -1184,6 +1230,7 @@ Assistant response:
   }
 
   onMount(() => {
+    restoreChatThread();
     void (async () => {
       config = await loadConfig();
       await tick();
