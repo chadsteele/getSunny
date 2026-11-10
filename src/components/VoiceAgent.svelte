@@ -7,6 +7,7 @@
   import Sparkle from './Sparkle.svelte';
   import SpeechModel from './SpeechModel.svelte';
   import TranscriptionModel from './TranscriptionModel.svelte';
+  import { createChatThreadStore } from '../lib/chat-thread-store.svelte';
   import { logger as console } from '../lib/logger';
   import type {
     AppConfig,
@@ -17,16 +18,12 @@
 
   type Status =
     'downloading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'ended' | 'error';
-  type ChatRole = 'user' | 'assistant' | 'status';
-  type ChatMessage = { id: number; role: ChatRole; content: string };
-
   const SILENCE_THRESHOLD = 0.08;
   const SILENCE_END_MS = 10 * 1000;
   const TRANSCRIPTION_WARNING_COOLDOWN_MS = 60 * 1000;
   const FIRST_PERSON_WARNING =
     'This is not personal. In your story, refer to yourself by name instead of using first-person terms.';
   const ENABLE_LLM = false;
-  const CHAT_THREAD_STORAGE_KEY = 'sunny-chat-thread';
   const KNOWN_VOCABULARY = ['Sunny', 'Mastering Money', 'MasterMoney.ai', 'NeuroRecursion'];
   const JOKES = [
     'I told my budget a joke, but it needed more interest.',
@@ -61,9 +58,7 @@
   let conversationActive = $state(false);
   let modelsReady = $state(false);
   let welcomePlayed = $state(false);
-  let chatMessages = $state<ChatMessage[]>([]);
-  let chatThreadHydrated = false;
-  let nextMessageId = 0;
+  const chatThread = createChatThreadStore();
   let errorMessage = $state('');
   let downloadStatus = $state('Preparing voice models...');
   let downloadingModel = $state('voice models');
@@ -108,50 +103,6 @@
   let recentTranscriptionWarnings: string[] = [];
   const loggedProgress = new Map<string, number>();
 
-  function restoreChatThread() {
-    if (typeof localStorage === 'undefined') {
-      chatThreadHydrated = true;
-      return;
-    }
-    try {
-      const stored = JSON.parse(localStorage.getItem(CHAT_THREAD_STORAGE_KEY) ?? 'null') as unknown;
-      if (!Array.isArray(stored)) {
-        chatThreadHydrated = true;
-        return;
-      }
-      const restored = stored.filter(
-        (message): message is ChatMessage =>
-          typeof message === 'object' &&
-          message !== null &&
-          typeof (message as ChatMessage).id === 'number' &&
-          ['user', 'assistant', 'status'].includes((message as ChatMessage).role) &&
-          typeof (message as ChatMessage).content === 'string',
-      );
-      chatMessages = restored;
-      nextMessageId = restored.reduce(
-        (highestId, message) => Math.max(highestId, message.id + 1),
-        0,
-      );
-      console.log('[Sunny] Restored chat thread from browser storage:', {
-        messageCount: restored.length,
-      });
-    } catch (error) {
-      console.warn('[Sunny] Unable to restore chat thread from browser storage:', error);
-    } finally {
-      chatThreadHydrated = true;
-    }
-  }
-
-  $effect(() => {
-    const messages = chatMessages;
-    if (!chatThreadHydrated || typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(CHAT_THREAD_STORAGE_KEY, JSON.stringify(messages));
-    } catch (error) {
-      console.warn('[Sunny] Unable to persist chat thread to browser storage:', error);
-    }
-  });
-
   function chooseTranscriptionWarning() {
     const availableResponses = EMPTY_TRANSCRIPTION_RESPONSES.filter(
       (response) => !recentTranscriptionWarnings.includes(response),
@@ -164,17 +115,12 @@
     return response;
   }
 
-  function addChatMessage(role: ChatRole, content: string) {
-    const message = content.trim();
-    if (!message) return;
-    chatMessages.push({ id: nextMessageId++, role, content: message });
+  function addChatMessage(role: 'user' | 'assistant' | 'status', content: string) {
+    chatThread.add(role, content);
   }
 
   function conversationContext() {
-    return chatMessages
-      .filter(({ role }) => role !== 'status')
-      .map(({ role, content }) => `${role === 'user' ? 'User' : 'Sunny'}: ${content}`)
-      .join('\n\n');
+    return chatThread.context();
   }
 
   function waitForReview() {
@@ -217,7 +163,7 @@
     pipelineVersion += 1;
     cancelActivePipeline?.();
     cancelActivePipeline = undefined;
-    chatMessages = chatMessages.filter((message) => message.id < messageId);
+    chatThread.removeMessagesBefore(messageId);
     stopConversation();
     void startConversation().catch((error: unknown) => {
       console.error('[Sunny] Failed to restart after deleting transcription:', error);
@@ -1230,7 +1176,7 @@ Assistant response:
   }
 
   onMount(() => {
-    restoreChatThread();
+    chatThread.restore();
     void (async () => {
       config = await loadConfig();
       await tick();
@@ -1275,7 +1221,7 @@ Assistant response:
 
 <main class="session-main">
   <ChatThread
-    messages={chatMessages}
+    messages={chatThread.messages}
     {status}
     {reviewMessageId}
     onUserMessageClick={reviewUserMessage}

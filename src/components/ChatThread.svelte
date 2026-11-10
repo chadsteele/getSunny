@@ -1,8 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-
-  type ChatRole = 'user' | 'assistant' | 'status';
-  type ChatMessage = { id: number; role: ChatRole; content: string };
+  import type { ChatMessage } from '../lib/chat-thread-store.svelte';
 
   interface Props {
     messages: ChatMessage[];
