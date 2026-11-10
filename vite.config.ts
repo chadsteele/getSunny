@@ -28,6 +28,9 @@ export default defineConfig({
       'onnxruntime-web',
     ],
   },
+  worker: {
+    format: 'es',
+  },
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',

@@ -9,6 +9,7 @@
   import TranscriptionModel from './TranscriptionModel.svelte';
   import { createChatThreadStore } from '../lib/chat-thread-store.svelte';
   import { logger as console } from '../lib/logger';
+  import { defaultAppConfig } from '../lib/model-config';
   import type {
     AppConfig,
     LanguageModelController,
@@ -23,7 +24,7 @@
   const TRANSCRIPTION_WARNING_COOLDOWN_MS = 60 * 1000;
   const FIRST_PERSON_WARNING =
     'This is not personal. In your story, refer to yourself by name instead of using first-person terms.';
-  const ENABLE_LLM = false;
+  const ENABLE_LLM = true;
   const KNOWN_VOCABULARY = ['Sunny', 'Mastering Money', 'MasterMoney.ai', 'NeuroRecursion'];
   const JOKES = [
     'I told my budget a joke, but it needed more interest.',
@@ -458,21 +459,9 @@
     return modelPreparation;
   }
 
-  async function loadConfig() {
-    console.log('[Sunny] Loading model config from /api/config/');
-    const response = await fetch('/api/config/', { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`Model config request failed: ${response.status} ${response.statusText}`);
-    }
-    const loadedConfig = (await response.json()) as AppConfig;
-    if (
-      !loadedConfig.models?.transcription ||
-      !loadedConfig.models.language ||
-      !loadedConfig.models.speech
-    ) {
-      throw new Error('Model config endpoint returned an incomplete configuration.');
-    }
-    return loadedConfig;
+  function loadConfig() {
+    console.log('[Sunny] Loading model config from the application source');
+    return defaultAppConfig;
   }
 
   async function loadSystemPrompt() {
