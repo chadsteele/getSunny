@@ -96,6 +96,7 @@
   let languageModel = $state<LanguageModelController | undefined>();
   let speechModel = $state<SpeechModelController | undefined>();
   let modelPreparation: Promise<void> | undefined;
+  let remainingModelPreparation: Promise<void> | undefined;
   let hasAnnouncedReady = false;
   let downloadingOccurred = false;
   let activeModelDownload = $state(false);
@@ -431,17 +432,22 @@
         if (!speechModel || !transcriptionModel || (ENABLE_LLM && !languageModel)) {
           throw new Error('Voice model components were not initialized.');
         }
-        if (ENABLE_LLM) {
-          await languageModel?.prepare();
-        } else {
-          console.log('[Sunny] LLM processing disabled; skipping language model preparation');
-        }
+        console.log('[Sunny] Preparing text-to-speech model before other models');
         await speechModel.prepare();
-        await transcriptionModel.prepare();
-        downloadStatus = 'Models ready — you can talk';
+        downloadStatus = 'Introduction ready — preparing other models';
         modelsReady = true;
-        console.log('[Sunny] Model preparation complete');
+        remainingModelPreparation = (async () => {
+          if (ENABLE_LLM) {
+            await languageModel?.prepare();
+          } else {
+            console.log('[Sunny] LLM processing disabled; skipping language model preparation');
+          }
+          await transcriptionModel.prepare();
+        })();
         void beginWelcome();
+        await remainingModelPreparation;
+        downloadStatus = 'Models ready — you can talk';
+        console.log('[Sunny] Model preparation complete');
       } catch (error) {
         console.error('[Sunny] Model preparation failed:', error);
         downloadStatus = 'Model download failed — check the console';
@@ -525,6 +531,7 @@
     errorMessage = '';
     try {
       await speakSessionOpening();
+      await remainingModelPreparation;
       welcomePlayed = true;
       if (ENABLE_LLM && languageModel) {
         addChatMessage('status', 'Sunny is preparing the local response model.');
