@@ -7,10 +7,11 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "concurrently --kill-others-on-fail \"vite\" \"netlify functions:serve --port 9999\"",
+    "dev": "concurrently --kill-others-on-fail \"vite\" \"netlify functions:serve --offline --port 9999\"",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "verify:venice": "node --env-file=.env scripts/verify-venice.mjs",
     "format": "prettier --write \"src/**/*.{svelte,ts,css}\" \"netlify/functions/**/*.mjs\"",
     "format:check": "prettier --check \"src/**/*.{svelte,ts,css}\" \"netlify/functions/**/*.mjs\""
   },
@@ -28,8 +29,6 @@
     "vite": "^6.0.7"
   },
   "dependencies": {
-    "@deepgram/sdk": "^5.18.0",
-    "@google/genai": "^3.0.0",
     "openai": "^7.55.0"
   }
 }

@@ -25,7 +25,12 @@
   let audio: HTMLAudioElement | undefined;
   let audioUrl: string | undefined;
   let speechQueue = Promise.resolve();
+  let speechPrefetch = new Map<string, Promise<Blob>>();
   let responseInProgress = false;
+  let microphoneContext: AudioContext | undefined;
+  let microphoneAnalyser: AnalyserNode | undefined;
+  let microphoneData: Uint8Array<ArrayBuffer> | undefined;
+  let microphoneAnimationFrame: number | undefined;
 
   function endpoint(name: string) {
     return `/.netlify/functions/${name}`;
@@ -60,47 +65,98 @@
     return { sentences, remaining };
   }
 
-  async function playSentence(text: string) {
-    const response = await fetch(endpoint('tts'), {
+  function fetchSpeech(text: string) {
+    const existing = speechPrefetch.get(text);
+    if (existing) return existing;
+    const request = fetch(endpoint('tts'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text }),
-    });
-    if (!response.ok) {
-      let message = `TTS request failed: ${response.status}`;
-      try {
-        const result = (await response.json()) as { error?: string };
-        if (result.error) message = result.error;
-      } catch {
-        // Keep the HTTP status when the function does not return JSON.
+    }).then(async (response) => {
+      if (!response.ok) {
+        let message = `TTS request failed: ${response.status}`;
+        try {
+          const result = (await response.json()) as { error?: string };
+          if (result.error) message = result.error;
+        } catch {
+          // Keep the HTTP status when the function does not return JSON.
+        }
+        throw new Error(message);
       }
-      throw new Error(message);
-    }
-    const blob = await response.blob();
+      return response.blob();
+    });
+    speechPrefetch.set(text, request);
+    return request;
+  }
+
+  async function playSentence(text: string, blobPromise: Promise<Blob>) {
+    const blob = await blobPromise;
+    speechPrefetch.delete(text);
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     audioUrl = URL.createObjectURL(blob);
     audio ??= new Audio();
     audio.src = audioUrl;
     status = 'speaking';
+    intensity = 0.85;
     await audio.play();
     await new Promise<void>((resolve) => {
       audio!.onended = () => resolve();
       audio!.onerror = () => resolve();
     });
+    intensity = conversationActive ? 0.35 : 0.18;
   }
 
   function queueSentence(text: string) {
-    if (!text.trim()) return;
-    speechQueue = speechQueue.then(() => playSentence(text.trim()));
+    const sentence = text.trim();
+    if (!sentence) return;
+    const blobPromise = fetchSpeech(sentence);
+    speechQueue = speechQueue
+      .then(() => playSentence(sentence, blobPromise))
+      .catch((error: unknown) => {
+        console.error('[Sunny] TTS playback failed:', error);
+        status = 'error';
+        statusMessage = error instanceof Error ? error.message : 'Speech playback failed.';
+        chatThread.add('status', statusMessage);
+      });
   }
 
   async function speak(text: string) {
-    let remaining = text;
-    const { sentences, remaining: tail } = splitSentences(remaining);
+    const { sentences, remaining } = splitSentences(text);
     sentences.forEach(queueSentence);
-    remaining = tail;
     if (remaining.trim()) queueSentence(remaining);
     await speechQueue;
+  }
+
+  function updateMicrophoneIntensity() {
+    if (!microphoneAnalyser || !microphoneData || !conversationActive) return;
+    microphoneAnalyser.getByteTimeDomainData(microphoneData);
+    let sum = 0;
+    for (const sample of microphoneData) {
+      const amplitude = (sample - 128) / 128;
+      sum += amplitude * amplitude;
+    }
+    const level = Math.sqrt(sum / microphoneData.length);
+    intensity = Math.min(0.9, Math.max(0.3, level * 4));
+    microphoneAnimationFrame = requestAnimationFrame(updateMicrophoneIntensity);
+  }
+
+  function startMicrophoneVisualizer() {
+    if (!mediaStream || microphoneAnimationFrame !== undefined) return;
+    microphoneContext = new AudioContext();
+    microphoneAnalyser = microphoneContext.createAnalyser();
+    microphoneAnalyser.fftSize = 256;
+    microphoneData = new Uint8Array(microphoneAnalyser.fftSize);
+    microphoneContext.createMediaStreamSource(mediaStream).connect(microphoneAnalyser);
+    microphoneAnimationFrame = requestAnimationFrame(updateMicrophoneIntensity);
+  }
+
+  function stopMicrophoneVisualizer() {
+    if (microphoneAnimationFrame !== undefined) cancelAnimationFrame(microphoneAnimationFrame);
+    microphoneAnimationFrame = undefined;
+    microphoneAnalyser = undefined;
+    microphoneData = undefined;
+    void microphoneContext?.close();
+    microphoneContext = undefined;
   }
 
   async function transcribe(blob: Blob) {
@@ -194,30 +250,48 @@
   function stopRecording() {
     if (segmentTimer) clearTimeout(segmentTimer);
     segmentTimer = undefined;
+    stopMicrophoneVisualizer();
     if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
   }
 
   function startRecording() {
     if (!conversationActive || responseInProgress || !mediaStream) return;
     recordingChunks = [];
-    mediaRecorder = new MediaRecorder(mediaStream);
+    const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((type) =>
+      MediaRecorder.isTypeSupported(type),
+    );
+    mediaRecorder = new MediaRecorder(mediaStream, mimeType ? { mimeType } : undefined);
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size) recordingChunks.push(event.data);
     };
     mediaRecorder.onstop = () => {
       const blob = new Blob(recordingChunks, { type: mediaRecorder?.mimeType || 'audio/webm' });
+      console.log('[Sunny] Recorded microphone segment:', {
+        bytes: blob.size,
+        type: blob.type,
+      });
       if (blob.size) void processRecording(blob);
     };
-    mediaRecorder.start();
+    mediaRecorder.start(250);
     status = 'listening';
+    startMicrophoneVisualizer();
     segmentTimer = setTimeout(stopRecording, 10_000);
   }
 
   async function startConversation() {
     if (conversationActive) return;
-    mediaStream ??= await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaStream ??= await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
     conversationActive = true;
     status = 'listening';
+    intensity = 0.45;
+    startMicrophoneVisualizer();
     recordingStartedAt = Date.now();
     recordingTimer = setInterval(() => (recordingElapsedMs = Date.now() - recordingStartedAt), 250);
     startRecording();
@@ -228,6 +302,7 @@
     stopRecording();
     mediaStream?.getTracks().forEach((track) => track.stop());
     mediaStream = undefined;
+    stopMicrophoneVisualizer();
     if (recordingTimer) clearInterval(recordingTimer);
     recordingTimer = undefined;
     recordingElapsedMs = 0;
@@ -273,6 +348,11 @@
 
   onMount(() => {
     chatThread.restore();
+    const clearChatHistory = () => {
+      chatThread.clear();
+      reviewMessageId = undefined;
+    };
+    window.addEventListener('sunny-chat-cleared', clearChatHistory);
     void loadPrompt()
       .then(() => {
         status = 'paused';
@@ -284,6 +364,7 @@
         chatThread.add('status', statusMessage);
       });
     return () => {
+      window.removeEventListener('sunny-chat-cleared', clearChatHistory);
       stopConversation();
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
@@ -335,6 +416,7 @@
   .session-stage :global(.sparkle-stage) {
     position: absolute;
     inset: 18% 0 auto;
+    z-index: 3;
     pointer-events: none;
   }
 </style>

@@ -62,6 +62,13 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     persist();
   }
 
+  function clear() {
+    messages = [];
+    nextMessageId = 0;
+    if (typeof localStorage === 'undefined') return;
+    localStorage.removeItem(storageKey);
+  }
+
   function removeMessagesBefore(messageId: number) {
     messages = messages.filter((message) => message.id < messageId);
     persist();
@@ -81,6 +88,7 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     restore,
     add,
     update,
+    clear,
     removeMessagesBefore,
     context,
   };

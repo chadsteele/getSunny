@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 
 export default async function chatStream(request) {
   if (request.method !== 'POST') {
@@ -8,9 +8,9 @@ export default async function chatStream(request) {
     });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.VENICE_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'GEMINI_API_KEY is not configured' }), {
+    return new Response(JSON.stringify({ error: 'VENICE_API_KEY is not configured' }), {
       status: 500,
       headers: { 'content-type': 'application/json' },
     });
@@ -18,17 +18,24 @@ export default async function chatStream(request) {
 
   try {
     const { systemPrompt, history, prompt } = await request.json();
-    const ai = new GoogleGenAI({ apiKey });
-    const stream = await ai.models.generateContentStream({
-      model: 'gemini-2.5-flash-lite',
-      contents: [
-        ...(Array.isArray(history) ? history : []),
-        { role: 'user', parts: [{ text: String(prompt ?? '') }] },
+    const client = new OpenAI({
+      apiKey,
+      baseURL: 'https://api.venice.ai/api/v1',
+    });
+    const stream = await client.chat.completions.create({
+      model: 'zai-org-glm-5-2',
+      messages: [
+        { role: 'system', content: String(systemPrompt ?? '') },
+        ...(Array.isArray(history)
+          ? history.map((message) => ({
+              role: message.role === 'model' ? 'assistant' : 'user',
+              content: String(message.parts?.[0]?.text ?? ''),
+            }))
+          : []),
+        { role: 'user', content: String(prompt ?? '') },
       ],
-      config: {
-        systemInstruction: String(systemPrompt ?? ''),
-        temperature: 0.35,
-      },
+      temperature: 0.35,
+      stream: true,
     });
 
     const encoder = new TextEncoder();
@@ -36,7 +43,8 @@ export default async function chatStream(request) {
       async start(controller) {
         try {
           for await (const chunk of stream) {
-            if (chunk.text) controller.enqueue(encoder.encode(chunk.text));
+            const text = chunk.choices[0]?.delta?.content;
+            if (text) controller.enqueue(encoder.encode(text));
           }
           controller.close();
         } catch (error) {
@@ -52,7 +60,7 @@ export default async function chatStream(request) {
       },
     });
   } catch (error) {
-    console.error('[chat-stream] Gemini request failed:', error);
+    console.error('[chat-stream] Venice request failed:', error);
     const status = Number.isInteger(error?.status) ? error.status : 502;
     const message =
       typeof error?.error?.message === 'string' ? error.error.message : 'Chat generation failed';

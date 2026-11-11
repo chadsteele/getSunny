@@ -1,5 +1,12 @@
 <script lang="ts">
   let menuOpen = false;
+
+  function deleteChatHistory() {
+    if (!confirm('Delete all saved chat history? This cannot be undone.')) return;
+    localStorage.removeItem('sunny-chat-thread');
+    window.dispatchEvent(new CustomEvent('sunny-chat-cleared'));
+    menuOpen = false;
+  }
 </script>
 
 <header class="topbar">
@@ -7,7 +14,7 @@
     class="menu-button"
     aria-label="Open menu"
     aria-expanded={menuOpen}
-    on:click={() => (menuOpen = !menuOpen)}
+    onclick={() => (menuOpen = !menuOpen)}
   >
     <span></span><span></span><span></span>
   </button>
@@ -18,6 +25,9 @@
     <nav class="menu-popover" aria-label="Session menu">
       <a href="#session">How it works</a>
       <a href="#sound">Choose a sound</a>
+      <button type="button" class="delete-chat-button" onclick={deleteChatHistory}>
+        Delete chat history
+      </button>
     </nav>
   {/if}
 </header>
@@ -97,5 +107,20 @@
     color: #eeb64e;
     font-size: 13px;
     text-decoration: none;
+  }
+  .delete-chat-button {
+    padding: 0;
+    border: 0;
+    color: #eeb64e;
+    background: transparent;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .delete-chat-button:hover,
+  .delete-chat-button:focus-visible,
+  .menu-popover a:hover {
+    color: #fff0bd;
   }
 </style>

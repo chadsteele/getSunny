@@ -1,5 +1,3 @@
-import { DeepgramClient } from '@deepgram/sdk';
-
 export default async function transcribe(request) {
   if (request.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -25,12 +23,26 @@ export default async function transcribe(request) {
   }
 
   try {
-    const deepgram = new DeepgramClient({ apiKey });
-    const result = await deepgram.listen.v1.media.transcribeFile(audio, {
-      model: 'nova-3',
-      smart_format: true,
-      punctuate: true,
-    });
+    const response = await fetch(
+      'https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${apiKey}`,
+          'content-type': request.headers.get('content-type') || 'audio/webm',
+        },
+        body: audio,
+      },
+    );
+    if (!response.ok) {
+      const details = await response.text();
+      console.error('[transcribe] Deepgram returned an error:', response.status, details);
+      return new Response(JSON.stringify({ error: 'Transcription failed' }), {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    const result = await response.json();
     const transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '';
     return new Response(JSON.stringify({ text: transcript }), {
       headers: { 'content-type': 'application/json' },

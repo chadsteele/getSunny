@@ -8,9 +8,9 @@ export default async function tts(request) {
     });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.SUNNY_OPENAI_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'OPENAI_API_KEY is not configured' }), {
+    return new Response(JSON.stringify({ error: 'SUNNY_OPENAI_API_KEY is not configured' }), {
       status: 500,
       headers: { 'content-type': 'application/json' },
     });
