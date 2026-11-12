@@ -2,8 +2,6 @@
   import DownloadProgress from './DownloadProgress.svelte';
 
   interface Props {
-    modelsReady: boolean;
-    activeModelDownload: boolean;
     downloadingModel: string;
     downloadProgress: number;
     downloadRemainingMs: number;
@@ -15,8 +13,6 @@
   }
 
   let {
-    modelsReady,
-    activeModelDownload,
     downloadingModel,
     downloadProgress,
     downloadRemainingMs,
@@ -29,17 +25,15 @@
 </script>
 
 <footer class="session-footer">
-  {#if !modelsReady || activeModelDownload}
-    <div class="progress-area">
-      <DownloadProgress
-        title={downloadingModel}
-        progress={downloadProgress}
-        remainingMs={downloadRemainingMs}
-        status={downloadStatus}
-        showStatus={false}
-      />
-    </div>
-  {/if}
+  <div class="progress-area">
+    <DownloadProgress
+      title={downloadingModel}
+      progress={downloadProgress}
+      remainingMs={downloadRemainingMs}
+      status={downloadStatus}
+      showStatus={false}
+    />
+  </div>
   <div class="control-row">
     <button
       class:muted={speakerMuted}
@@ -82,6 +76,7 @@
     flex: 0 0 auto;
     z-index: 5;
     display: flex;
+    flex-direction: column;
     gap: 8px;
     padding-top: 10px;
     background: #020202e6;

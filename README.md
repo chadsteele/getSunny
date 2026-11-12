@@ -2,7 +2,7 @@
 
 A tiny Svelte experience inspired by the supplied mobile reference. The central sparkle responds to live frequency data from either the built-in ambient tone or an audio file selected by the user.
 
-The app uses a server-backed streaming voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Audio is transcribed by Deepgram, responses stream from Venice `zai-org-glm-5-2`, and sentence audio is synthesized by OpenAI TTS-1. The existing [`Sparkle.svelte`](./src/components/Sparkle.svelte) and [`AudioControls.svelte`](./src/components/AudioControls.svelte) components remain the visual sparkle and pause/resume control.
+The app uses a server-backed streaming voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Speech is transcribed immediately by the browser's built-in Web Speech API, responses stream from Venice `zai-org-glm-5-2`, and sentence audio is synthesized by OpenAI TTS-1. Chrome and Edge provide the most consistent browser speech-recognition support. The existing [`Sparkle.svelte`](./src/components/Sparkle.svelte) and [`AudioControls.svelte`](./src/components/AudioControls.svelte) components remain the visual sparkle and pause/resume control.
 
 ## Local development
 
@@ -17,10 +17,9 @@ The functions server runs in offline mode so local `.env` values are not
 overridden by environment values from a linked Netlify site. Open
 `http://localhost:5173`.
 
-The voice loop requires microphone permission and server-side API keys. No AI models are downloaded to the browser.
+The voice loop requires microphone permission and server-side API keys for chat and TTS. No AI models are downloaded to the browser.
 
 ```bash
-DEEPGRAM_API_KEY=...
 VENICE_API_KEY=...
 SUNNY_OPENAI_API_KEY=...
 ```

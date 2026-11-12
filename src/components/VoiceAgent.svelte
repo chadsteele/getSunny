@@ -7,21 +7,38 @@
   import { createChatThreadStore } from '../lib/chat-thread-store.svelte';
 
   type Status = 'loading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
+  type SpeechRecognitionResultLike = { transcript: string };
+  type SpeechRecognitionEventLike = Event & {
+    resultIndex: number;
+    results: ArrayLike<{ isFinal: boolean; 0: SpeechRecognitionResultLike }>;
+  };
+  type SpeechRecognitionErrorEventLike = Event & { error: string };
+  type SpeechRecognitionLike = {
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    onend: (() => void) | null;
+    onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+    onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+    start: () => void;
+    stop: () => void;
+  };
+  type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
   const chatThread = createChatThreadStore();
   let status = $state<Status>('loading');
   let statusMessage = $state('Connecting to Sunny...');
+  let liveTranscript = $state('');
   let systemPrompt = '';
   let conversationActive = $state(false);
   let recordingElapsedMs = $state(0);
   let intensity = $state(0.18);
   let reviewMessageId = $state<number | undefined>();
-  let mediaRecorder: MediaRecorder | undefined;
   let mediaStream: MediaStream | undefined;
-  let recordingChunks: Blob[] = [];
+  let speechRecognition: SpeechRecognitionLike | undefined;
   let recordingTimer: ReturnType<typeof setInterval> | undefined;
   let recordingStartedAt = 0;
-  let segmentTimer: ReturnType<typeof setTimeout> | undefined;
+  let recognitionRestartBlocked = false;
   let audio: HTMLAudioElement | undefined;
   let audioUrl: string | undefined;
   let speechQueue = Promise.resolve();
@@ -38,6 +55,12 @@
   let speechSource: MediaElementAudioSourceNode | undefined;
   let microphoneMuted = $state(true);
   let speakerMuted = $state(false);
+
+  function reportStatus(message: string, nextStatus?: Status) {
+    statusMessage = message;
+    console.log('[Sunny]', message);
+    if (nextStatus) status = nextStatus;
+  }
 
   function endpoint(name: string) {
     return `/.netlify/functions/${name}`;
@@ -128,9 +151,7 @@
       .then(() => playSentence(sentence, blobPromise))
       .catch((error: unknown) => {
         console.error('[Sunny] TTS playback failed:', error);
-        status = 'error';
-        statusMessage = error instanceof Error ? error.message : 'Speech playback failed.';
-        chatThread.add('status', statusMessage);
+        reportStatus(error instanceof Error ? error.message : 'Speech playback failed.', 'error');
       });
   }
 
@@ -215,18 +236,6 @@
     speechContext = undefined;
   }
 
-  async function transcribe(blob: Blob) {
-    const response = await fetch(endpoint('transcribe'), {
-      method: 'POST',
-      headers: { 'content-type': blob.type || 'audio/webm' },
-      body: blob,
-    });
-    if (!response.ok) throw new Error(`Transcription request failed: ${response.status}`);
-    const result = (await response.json()) as { text?: string; error?: string };
-    if (result.error) throw new Error(result.error);
-    return result.text?.trim() ?? '';
-  }
-
   function history() {
     return chatThread.messages
       .filter(({ role, content }) => role !== 'status' && content.trim())
@@ -276,62 +285,94 @@
     await speechQueue;
   }
 
-  async function processRecording(blob: Blob) {
+  async function processTranscript(text: string) {
     if (responseInProgress) return;
     responseInProgress = true;
+    liveTranscript = '';
     status = 'thinking';
     try {
-      const text = await transcribe(blob);
-      if (!text) {
-        chatThread.add('status', 'I could not hear that. Please try again.');
+      const transcript = text.trim();
+      if (!transcript) {
+        reportStatus('I could not hear that. Please try again.');
         return;
       }
       const conversationHistory = history();
-      chatThread.add('user', text);
-      await streamResponse(text, conversationHistory);
+      chatThread.add('user', transcript);
+      await streamResponse(transcript, conversationHistory);
     } catch (error) {
       console.error('[Sunny] Remote voice pipeline failed:', error);
-      status = 'error';
-      statusMessage = error instanceof Error ? error.message : 'Voice request failed.';
-      chatThread.add('status', statusMessage);
+      reportStatus(error instanceof Error ? error.message : 'Voice request failed.', 'error');
     } finally {
       responseInProgress = false;
       if (conversationActive) {
         status = 'listening';
-        startRecording();
+        startSpeechRecognition();
       }
     }
   }
 
-  function stopRecording() {
-    if (segmentTimer) clearTimeout(segmentTimer);
-    segmentTimer = undefined;
+  function stopSpeechRecognition() {
+    recognitionRestartBlocked = true;
+    speechRecognition?.stop();
+    speechRecognition = undefined;
     stopMicrophoneVisualizer();
-    if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
   }
 
-  function startRecording() {
+  function startSpeechRecognition() {
     if (microphoneMuted || !conversationActive || responseInProgress || !mediaStream) return;
-    recordingChunks = [];
-    const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((type) =>
-      MediaRecorder.isTypeSupported(type),
-    );
-    mediaRecorder = new MediaRecorder(mediaStream, mimeType ? { mimeType } : undefined);
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size) recordingChunks.push(event.data);
+    const browserWindow = window as Window & {
+      SpeechRecognition?: SpeechRecognitionConstructor;
+      webkitSpeechRecognition?: SpeechRecognitionConstructor;
     };
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(recordingChunks, { type: mediaRecorder?.mimeType || 'audio/webm' });
-      console.log('[Sunny] Recorded microphone segment:', {
-        bytes: blob.size,
-        type: blob.type,
-      });
-      if (blob.size) void processRecording(blob);
+    const Recognition = browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      throw new Error('Browser speech recognition is not supported. Try Chrome or Edge.');
+    }
+
+    recognitionRestartBlocked = false;
+    const recognition = new Recognition();
+    speechRecognition = recognition;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || 'en-US';
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
+      let interim = '';
+      let final = '';
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        if (result.isFinal) final += result[0].transcript;
+        else interim += result[0].transcript;
+      }
+      if (interim.trim()) {
+        liveTranscript = interim.trim();
+        console.log('[Sunny] Transcription:', liveTranscript);
+      }
+      if (final.trim()) {
+        liveTranscript = final.trim();
+        console.log('[Sunny] Transcription:', liveTranscript);
+        reportStatus('Processing...', 'thinking');
+        recognition.stop();
+        void processTranscript(final);
+      }
     };
-    mediaRecorder.start(250);
+    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
+      if (event.error === 'no-speech' || event.error === 'aborted') return;
+      reportStatus(`Speech recognition failed: ${event.error}`, 'error');
+    };
+    recognition.onend = () => {
+      if (
+        speechRecognition === recognition &&
+        !recognitionRestartBlocked &&
+        conversationActive &&
+        !microphoneMuted &&
+        !responseInProgress
+      ) {
+        startSpeechRecognition();
+      }
+    };
+    recognition.start();
     status = 'listening';
     startMicrophoneVisualizer();
-    segmentTimer = setTimeout(stopRecording, 10_000);
   }
 
   async function startConversation() {
@@ -352,12 +393,12 @@
     startMicrophoneVisualizer();
     recordingStartedAt = Date.now();
     recordingTimer = setInterval(() => (recordingElapsedMs = Date.now() - recordingStartedAt), 250);
-    startRecording();
+    startSpeechRecognition();
   }
 
   function stopConversation() {
     conversationActive = false;
-    stopRecording();
+    stopSpeechRecognition();
     mediaStream?.getTracks().forEach((track) => track.stop());
     mediaStream = undefined;
     stopMicrophoneVisualizer();
@@ -379,9 +420,7 @@
       await startConversation();
     } catch (error) {
       microphoneMuted = true;
-      status = 'error';
-      statusMessage = error instanceof Error ? error.message : 'Microphone access failed.';
-      chatThread.add('status', statusMessage);
+      reportStatus(error instanceof Error ? error.message : 'Microphone access failed.', 'error');
     }
   }
 
@@ -436,12 +475,10 @@
     void loadPrompt()
       .then(() => {
         status = 'paused';
-        statusMessage = 'Ready — press play to talk';
+        reportStatus('Ready — press mic to talk', 'paused');
       })
       .catch((error: unknown) => {
-        status = 'error';
-        statusMessage = error instanceof Error ? error.message : 'Unable to start Sunny.';
-        chatThread.add('status', statusMessage);
+        reportStatus(error instanceof Error ? error.message : 'Unable to start Sunny.', 'error');
       });
     return () => {
       window.removeEventListener('sunny-chat-cleared', clearChatHistory);
@@ -461,7 +498,7 @@
     {/if}
     <ChatThread
       messages={chatThread.messages}
-      status={status === 'thinking' ? 'thinking' : status}
+      {liveTranscript}
       {reviewMessageId}
       onUserMessageClick={selectUserMessage}
       onDeleteReview={deleteReviewedMessage}
@@ -469,8 +506,6 @@
     />
   </div>
   <Footer
-    modelsReady={status !== 'loading'}
-    activeModelDownload={false}
     downloadingModel="remote voice services"
     downloadProgress={100}
     downloadRemainingMs={0}

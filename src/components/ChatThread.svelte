@@ -4,7 +4,7 @@
 
   interface Props {
     messages: ChatMessage[];
-    status: string;
+    liveTranscript?: string;
     reviewMessageId?: number;
     onUserMessageClick?: (messageId: number) => void;
     onDeleteReview?: () => void;
@@ -13,7 +13,7 @@
 
   let {
     messages,
-    status,
+    liveTranscript = '',
     reviewMessageId,
     onUserMessageClick,
     onDeleteReview,
@@ -31,18 +31,8 @@
 </script>
 
 <div class="chat-thread" bind:this={chatThread} aria-live="polite" aria-label="Conversation">
-  {#if messages.length === 0}
-    <p class="chat-empty">
-      Connecting to Sunny...<br />The voice services may take a moment to respond the first time.<br
-      /><br />Ensure volume is turned up.
-    </p>
-  {/if}
-  {#each messages as message (message.id)}
-    <div
-      class:chat-user={message.role === 'user'}
-      class:chat-status={message.role === 'status'}
-      class="chat-row"
-    >
+  {#each messages.filter((message) => message.role !== 'status') as message (message.id)}
+    <div class:chat-user={message.role === 'user'} class="chat-row">
       {#if message.role === 'user' && onUserMessageClick}
         <button
           class="chat-bubble chat-user-message"
@@ -62,8 +52,10 @@
       {/if}
     </div>
   {/each}
-  {#if status === 'thinking'}
-    <div class="chat-row"><p class="chat-bubble chat-typing">Sunny is thinking...</p></div>
+  {#if liveTranscript.trim()}
+    <div class="chat-row chat-user">
+      <p class="chat-bubble chat-user-message live-transcript">{liveTranscript}</p>
+    </div>
   {/if}
 </div>
 
@@ -123,6 +115,10 @@
     cursor: pointer;
   }
 
+  .live-transcript {
+    opacity: 0.8;
+  }
+
   .message-review-actions {
     display: flex;
     justify-content: flex-end;
@@ -138,22 +134,6 @@
     background: #160f06;
     cursor: pointer;
     margin-left: 6px;
-  }
-
-  .chat-status .chat-bubble,
-  .chat-typing {
-    border-color: #4b3b24;
-    color: #a98d5c;
-    background: #080705;
-    font-size: 12px;
-    font-style: italic;
-  }
-
-  .chat-empty {
-    margin: auto;
-    color: #8e6e3a;
-    font-size: 13px;
-    text-align: center;
   }
 
   @media (min-width: 600px) {
