@@ -7,6 +7,11 @@
     window.dispatchEvent(new CustomEvent('sunny-chat-cleared'));
     menuOpen = false;
   }
+
+  function restoreChatHistory() {
+    window.dispatchEvent(new CustomEvent('sunny-chat-restore'));
+    menuOpen = false;
+  }
 </script>
 
 <header class="topbar">
@@ -25,6 +30,9 @@
     <nav class="menu-popover" aria-label="Session menu">
       <a href="#session">How it works</a>
       <a href="#sound">Choose a sound</a>
+      <button type="button" class="menu-action" onclick={restoreChatHistory}>
+        Restore chat history
+      </button>
       <button type="button" class="delete-chat-button" onclick={deleteChatHistory}>
         Delete chat history
       </button>
@@ -108,6 +116,7 @@
     font-size: 13px;
     text-decoration: none;
   }
+  .menu-action,
   .delete-chat-button {
     padding: 0;
     border: 0;
@@ -118,6 +127,8 @@
     text-align: left;
     cursor: pointer;
   }
+  .menu-action:hover,
+  .menu-action:focus-visible,
   .delete-chat-button:hover,
   .delete-chat-button:focus-visible,
   .menu-popover a:hover {

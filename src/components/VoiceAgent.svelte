@@ -31,6 +31,13 @@
   let microphoneAnalyser: AnalyserNode | undefined;
   let microphoneData: Uint8Array<ArrayBuffer> | undefined;
   let microphoneAnimationFrame: number | undefined;
+  let speechContext: AudioContext | undefined;
+  let speechAnalyser: AnalyserNode | undefined;
+  let speechData: Uint8Array<ArrayBuffer> | undefined;
+  let speechAnimationFrame: number | undefined;
+  let speechSource: MediaElementAudioSourceNode | undefined;
+  let microphoneMuted = $state(true);
+  let speakerMuted = $state(false);
 
   function endpoint(name: string) {
     return `/.netlify/functions/${name}`;
@@ -90,25 +97,32 @@
   }
 
   async function playSentence(text: string, blobPromise: Promise<Blob>) {
+    if (speakerMuted) return;
     const blob = await blobPromise;
+    if (speakerMuted) return;
     speechPrefetch.delete(text);
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     audioUrl = URL.createObjectURL(blob);
     audio ??= new Audio();
     audio.src = audioUrl;
+    audio.muted = speakerMuted;
     status = 'speaking';
-    intensity = 0.85;
+    startSpeechVisualizer();
     await audio.play();
     await new Promise<void>((resolve) => {
       audio!.onended = () => resolve();
       audio!.onerror = () => resolve();
+      audio!.onpause = () => {
+        if (speakerMuted) resolve();
+      };
     });
+    stopSpeechVisualizer();
     intensity = conversationActive ? 0.35 : 0.18;
   }
 
   function queueSentence(text: string) {
     const sentence = text.trim();
-    if (!sentence) return;
+    if (!sentence || speakerMuted) return;
     const blobPromise = fetchSpeech(sentence);
     speechQueue = speechQueue
       .then(() => playSentence(sentence, blobPromise))
@@ -157,6 +171,48 @@
     microphoneData = undefined;
     void microphoneContext?.close();
     microphoneContext = undefined;
+  }
+
+  function updateSpeechIntensity() {
+    if (!speechAnalyser || !speechData || status !== 'speaking') return;
+    speechAnalyser.getByteTimeDomainData(speechData);
+    let sum = 0;
+    for (const sample of speechData) {
+      const amplitude = (sample - 128) / 128;
+      sum += amplitude * amplitude;
+    }
+    const level = Math.sqrt(sum / speechData.length);
+    intensity = Math.min(0.95, Math.max(0.3, level * 7));
+    speechAnimationFrame = requestAnimationFrame(updateSpeechIntensity);
+  }
+
+  function startSpeechVisualizer() {
+    if (!audio || speechAnimationFrame !== undefined) return;
+    speechContext ??= new AudioContext();
+    speechAnalyser ??= speechContext.createAnalyser();
+    speechAnalyser.fftSize = 256;
+    speechData ??= new Uint8Array(speechAnalyser.fftSize);
+    speechSource ??= speechContext.createMediaElementSource(audio);
+    speechSource.connect(speechAnalyser);
+    speechAnalyser.connect(speechContext.destination);
+    void speechContext.resume();
+    speechAnimationFrame = requestAnimationFrame(updateSpeechIntensity);
+  }
+
+  function stopSpeechVisualizer() {
+    if (speechAnimationFrame !== undefined) cancelAnimationFrame(speechAnimationFrame);
+    speechAnimationFrame = undefined;
+  }
+
+  function closeSpeechVisualizer() {
+    stopSpeechVisualizer();
+    speechSource?.disconnect();
+    speechAnalyser?.disconnect();
+    void speechContext?.close();
+    speechSource = undefined;
+    speechAnalyser = undefined;
+    speechData = undefined;
+    speechContext = undefined;
   }
 
   async function transcribe(blob: Blob) {
@@ -255,7 +311,7 @@
   }
 
   function startRecording() {
-    if (!conversationActive || responseInProgress || !mediaStream) return;
+    if (microphoneMuted || !conversationActive || responseInProgress || !mediaStream) return;
     recordingChunks = [];
     const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((type) =>
       MediaRecorder.isTypeSupported(type),
@@ -288,6 +344,8 @@
         autoGainControl: true,
       },
     });
+    mediaStream.getAudioTracks().forEach((track) => (track.enabled = !microphoneMuted));
+    if (audio) audio.muted = speakerMuted;
     conversationActive = true;
     status = 'listening';
     intensity = 0.45;
@@ -307,7 +365,35 @@
     recordingTimer = undefined;
     recordingElapsedMs = 0;
     audio?.pause();
+    closeSpeechVisualizer();
     status = 'paused';
+  }
+
+  async function toggleMicrophone() {
+    microphoneMuted = !microphoneMuted;
+    if (microphoneMuted) {
+      stopConversation();
+      return;
+    }
+    try {
+      await startConversation();
+    } catch (error) {
+      microphoneMuted = true;
+      status = 'error';
+      statusMessage = error instanceof Error ? error.message : 'Microphone access failed.';
+      chatThread.add('status', statusMessage);
+    }
+  }
+
+  function toggleSpeaker() {
+    speakerMuted = !speakerMuted;
+    if (speakerMuted) {
+      audio?.pause();
+      stopSpeechVisualizer();
+      intensity = conversationActive ? 0.35 : 0.18;
+    } else if (audio && audio.src && status === 'speaking') {
+      void audio.play();
+    }
   }
 
   function selectUserMessage(messageId: number) {
@@ -324,16 +410,6 @@
     reviewMessageId = undefined;
   }
 
-  async function toggleConversation() {
-    if (status === 'speaking' && audio) {
-      audio.pause();
-      status = 'paused';
-      return;
-    }
-    if (conversationActive) stopConversation();
-    else await startConversation();
-  }
-
   async function loadPrompt() {
     const response = await fetch('/api/prompt/', { cache: 'no-store' });
     if (!response.ok) throw new Error(`Prompt request failed: ${response.status}`);
@@ -347,12 +423,16 @@
   }
 
   onMount(() => {
-    chatThread.restore();
     const clearChatHistory = () => {
       chatThread.clear();
       reviewMessageId = undefined;
     };
+    const restoreChatHistory = () => {
+      chatThread.restore();
+      reviewMessageId = undefined;
+    };
     window.addEventListener('sunny-chat-cleared', clearChatHistory);
+    window.addEventListener('sunny-chat-restore', restoreChatHistory);
     void loadPrompt()
       .then(() => {
         status = 'paused';
@@ -365,7 +445,9 @@
       });
     return () => {
       window.removeEventListener('sunny-chat-cleared', clearChatHistory);
+      window.removeEventListener('sunny-chat-restore', restoreChatHistory);
       stopConversation();
+      closeSpeechVisualizer();
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   });
@@ -393,8 +475,10 @@
     downloadProgress={100}
     downloadRemainingMs={0}
     downloadStatus={statusMessage}
-    isPlaying={conversationActive || status === 'speaking'}
-    onToggle={toggleConversation}
+    {microphoneMuted}
+    {speakerMuted}
+    onToggleMicrophone={toggleMicrophone}
+    onToggleSpeaker={toggleSpeaker}
   />
 </main>
 

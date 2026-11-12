@@ -4,9 +4,10 @@
     progress: number;
     remainingMs: number;
     status: string;
+    showStatus?: boolean;
   }
 
-  let { title, progress, remainingMs, status }: Props = $props();
+  let { title, progress, remainingMs, status, showStatus = true }: Props = $props();
 
   function formatDuration(milliseconds: number) {
     if (!Number.isFinite(milliseconds) || milliseconds <= 0) return 'estimating...';
@@ -33,7 +34,9 @@
   >
     <span style={`width: ${progress}%`}></span>
   </div>
-  <div>{status}</div>
+  {#if showStatus}
+    <div>{status}</div>
+  {/if}
 </div>
 
 <style>
