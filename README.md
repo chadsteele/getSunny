@@ -2,7 +2,12 @@
 
 A tiny Svelte experience inspired by the supplied mobile reference. The central sparkle responds to live frequency data from either the built-in ambient tone or an audio file selected by the user.
 
-The app uses a server-backed streaming voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Speech is transcribed immediately by the browser's built-in Web Speech API, responses stream from Venice `zai-org-glm-5-2`, and sentence audio is synthesized by OpenAI TTS-1. Chrome and Edge provide the most consistent browser speech-recognition support. The existing [`Sparkle.svelte`](./src/components/Sparkle.svelte) and [`AudioControls.svelte`](./src/components/AudioControls.svelte) components remain the visual sparkle and pause/resume control.
+The app uses a server-backed streaming voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Speech is transcribed immediately by the browser's built-in Web Speech API, responses stream from Venice `zai-org-glm-5-2`, and sentence audio is synthesized by OpenAI `gpt-4o-mini-tts` with the `sage` voice. Chrome and Edge provide the most consistent browser speech-recognition support. The existing [`Sparkle.svelte`](./src/components/Sparkle.svelte) and [`AudioControls.svelte`](./src/components/AudioControls.svelte) components remain the visual sparkle and pause/resume control.
+
+TTS audio is cached in the browser for the current session and in the warm Netlify
+function instance, keyed by normalized text, voice, and model. Repeated sentences
+are served without another OpenAI request when the corresponding cache is
+available.
 
 ## Local development
 

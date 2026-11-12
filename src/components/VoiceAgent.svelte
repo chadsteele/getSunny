@@ -25,9 +25,12 @@
   type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
   const chatThread = createChatThreadStore();
+  const voiceCapabilityInstruction =
+    'Voice capability: You can speak your responses aloud through the voice system. Never say that you cannot speak, talk, or use your voice. When asked to speak, respond naturally and confidently; do not describe implementation details unless the user asks.';
   let status = $state<Status>('loading');
   let statusMessage = $state('Connecting to Sunny...');
   let liveTranscript = $state('');
+  let speakingSentence = $state('');
   let systemPrompt = '';
   let conversationActive = $state(false);
   let intensity = $state(0.18);
@@ -39,18 +42,23 @@
   let audioUrl: string | undefined;
   let speechQueue = Promise.resolve();
   let speechPrefetch = new Map<string, Promise<Blob>>();
+  const maxCachedSpeech = 100;
   let responseInProgress = false;
   let microphoneContext: AudioContext | undefined;
   let microphoneAnalyser: AnalyserNode | undefined;
   let microphoneData: Uint8Array<ArrayBuffer> | undefined;
-  let microphoneAnimationFrame: number | undefined;
   let speechContext: AudioContext | undefined;
   let speechAnalyser: AnalyserNode | undefined;
   let speechData: Uint8Array<ArrayBuffer> | undefined;
-  let speechAnimationFrame: number | undefined;
+  let audioAnimationFrame: number | undefined;
   let speechSource: MediaElementAudioSourceNode | undefined;
   let microphoneMuted = $state(true);
   let speakerMuted = $state(false);
+  let waitingProgress = $state(0);
+  let waitingRemainingMs = $state(60_000);
+  let waitingTimer: ReturnType<typeof setInterval> | undefined;
+  let waitingStartedAt = 0;
+  const maxWaitingMs = 60_000;
 
   function reportStatus(message: string, nextStatus?: Status) {
     statusMessage = message;
@@ -60,6 +68,25 @@
 
   function endpoint(name: string) {
     return `/.netlify/functions/${name}`;
+  }
+
+  function startWaitingProgress() {
+    if (waitingTimer) return;
+    waitingStartedAt = Date.now();
+    waitingProgress = 0;
+    waitingRemainingMs = maxWaitingMs;
+    waitingTimer = setInterval(() => {
+      const elapsed = Math.min(maxWaitingMs, Date.now() - waitingStartedAt);
+      waitingProgress = (elapsed / maxWaitingMs) * 100;
+      waitingRemainingMs = maxWaitingMs - elapsed;
+    }, 100);
+  }
+
+  function stopWaitingProgress() {
+    if (waitingTimer) clearInterval(waitingTimer);
+    waitingTimer = undefined;
+    waitingProgress = 0;
+    waitingRemainingMs = maxWaitingMs;
   }
 
   function extractOpening(prompt: string) {
@@ -92,26 +119,41 @@
   }
 
   function fetchSpeech(text: string) {
-    const existing = speechPrefetch.get(text);
-    if (existing) return existing;
+    const cacheKey = text.trim().replace(/\s+/g, ' ');
+    const existing = speechPrefetch.get(cacheKey);
+    if (existing) {
+      console.log('[Sunny] TTS cache hit (browser)');
+      return existing;
+    }
+    console.log('[Sunny] TTS cache miss; requesting TTS service');
     const request = fetch(endpoint('tts'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text }),
-    }).then(async (response) => {
-      if (!response.ok) {
-        let message = `TTS request failed: ${response.status}`;
-        try {
-          const result = (await response.json()) as { error?: string };
-          if (result.error) message = result.error;
-        } catch {
-          // Keep the HTTP status when the function does not return JSON.
+      body: JSON.stringify({ text: cacheKey }),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          let message = `TTS request failed: ${response.status}`;
+          try {
+            const result = (await response.json()) as { error?: string };
+            if (result.error) message = result.error;
+          } catch {
+            // Keep the HTTP status when the function does not return JSON.
+          }
+          throw new Error(message);
         }
-        throw new Error(message);
-      }
-      return response.blob();
-    });
-    speechPrefetch.set(text, request);
+        return response.blob();
+      })
+      .catch((error: unknown) => {
+        speechPrefetch.delete(cacheKey);
+        throw error;
+      });
+    speechPrefetch.set(cacheKey, request);
+    while (speechPrefetch.size > maxCachedSpeech) {
+      const oldest = speechPrefetch.keys().next().value;
+      if (oldest === undefined) break;
+      speechPrefetch.delete(oldest);
+    }
     return request;
   }
 
@@ -119,24 +161,28 @@
     if (speakerMuted) return;
     const blob = await blobPromise;
     if (speakerMuted) return;
-    speechPrefetch.delete(text);
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     audioUrl = URL.createObjectURL(blob);
     audio ??= new Audio();
     audio.src = audioUrl;
     audio.muted = speakerMuted;
     status = 'speaking';
+    speakingSentence = text;
     startSpeechVisualizer();
-    await audio.play();
-    await new Promise<void>((resolve) => {
-      audio!.onended = () => resolve();
-      audio!.onerror = () => resolve();
-      audio!.onpause = () => {
-        if (speakerMuted) resolve();
-      };
-    });
-    stopSpeechVisualizer();
-    intensity = conversationActive ? 0.35 : 0.18;
+    try {
+      await audio.play();
+      await new Promise<void>((resolve) => {
+        audio!.onended = () => resolve();
+        audio!.onerror = () => resolve();
+        audio!.onpause = () => {
+          if (speakerMuted) resolve();
+        };
+      });
+    } finally {
+      if (speakingSentence === text) speakingSentence = '';
+      stopSpeechVisualizer();
+      intensity = conversationActive ? 0.35 : 0.18;
+    }
   }
 
   function queueSentence(text: string) {
@@ -158,53 +204,63 @@
     await speechQueue;
   }
 
-  function updateMicrophoneIntensity() {
-    if (!microphoneAnalyser || !microphoneData || !conversationActive) return;
-    microphoneAnalyser.getByteTimeDomainData(microphoneData);
+  function getAudioLevel(analyser: AnalyserNode, data: Uint8Array<ArrayBuffer>) {
+    analyser.getByteTimeDomainData(data);
     let sum = 0;
-    for (const sample of microphoneData) {
+    for (const sample of data) {
       const amplitude = (sample - 128) / 128;
       sum += amplitude * amplitude;
     }
-    const level = Math.sqrt(sum / microphoneData.length);
-    intensity = Math.min(0.9, Math.max(0.3, level * 4));
-    microphoneAnimationFrame = requestAnimationFrame(updateMicrophoneIntensity);
+    return Math.sqrt(sum / data.length);
+  }
+
+  function updateAudioIntensity() {
+    const microphoneLevel =
+      microphoneAnalyser && microphoneData
+        ? getAudioLevel(microphoneAnalyser, microphoneData) * 4
+        : 0;
+    const speechLevel =
+      speechAnalyser && speechData ? getAudioLevel(speechAnalyser, speechData) * 7 : 0;
+    const level = Math.max(microphoneLevel, speechLevel);
+    if (!microphoneAnalyser && !speechAnalyser) {
+      audioAnimationFrame = undefined;
+      intensity = 0.18;
+      return;
+    }
+    intensity = Math.min(0.95, Math.max(0.18, level));
+    audioAnimationFrame = requestAnimationFrame(updateAudioIntensity);
+  }
+
+  function startAudioDriver() {
+    if (audioAnimationFrame === undefined) {
+      audioAnimationFrame = requestAnimationFrame(updateAudioIntensity);
+    }
   }
 
   function startMicrophoneVisualizer() {
-    if (!mediaStream || microphoneAnimationFrame !== undefined) return;
+    if (!mediaStream || microphoneAnalyser) return;
     microphoneContext = new AudioContext();
     microphoneAnalyser = microphoneContext.createAnalyser();
     microphoneAnalyser.fftSize = 256;
     microphoneData = new Uint8Array(microphoneAnalyser.fftSize);
     microphoneContext.createMediaStreamSource(mediaStream).connect(microphoneAnalyser);
-    microphoneAnimationFrame = requestAnimationFrame(updateMicrophoneIntensity);
+    startAudioDriver();
   }
 
   function stopMicrophoneVisualizer() {
-    if (microphoneAnimationFrame !== undefined) cancelAnimationFrame(microphoneAnimationFrame);
-    microphoneAnimationFrame = undefined;
     microphoneAnalyser = undefined;
     microphoneData = undefined;
+    if (!speechAnalyser && audioAnimationFrame !== undefined) {
+      cancelAnimationFrame(audioAnimationFrame);
+      audioAnimationFrame = undefined;
+      intensity = 0.18;
+    }
     void microphoneContext?.close();
     microphoneContext = undefined;
   }
 
-  function updateSpeechIntensity() {
-    if (!speechAnalyser || !speechData || status !== 'speaking') return;
-    speechAnalyser.getByteTimeDomainData(speechData);
-    let sum = 0;
-    for (const sample of speechData) {
-      const amplitude = (sample - 128) / 128;
-      sum += amplitude * amplitude;
-    }
-    const level = Math.sqrt(sum / speechData.length);
-    intensity = Math.min(0.95, Math.max(0.3, level * 7));
-    speechAnimationFrame = requestAnimationFrame(updateSpeechIntensity);
-  }
-
   function startSpeechVisualizer() {
-    if (!audio || speechAnimationFrame !== undefined) return;
+    if (!audio || speechAnalyser) return;
     speechContext ??= new AudioContext();
     speechAnalyser ??= speechContext.createAnalyser();
     speechAnalyser.fftSize = 256;
@@ -213,12 +269,15 @@
     speechSource.connect(speechAnalyser);
     speechAnalyser.connect(speechContext.destination);
     void speechContext.resume();
-    speechAnimationFrame = requestAnimationFrame(updateSpeechIntensity);
+    startAudioDriver();
   }
 
   function stopSpeechVisualizer() {
-    if (speechAnimationFrame !== undefined) cancelAnimationFrame(speechAnimationFrame);
-    speechAnimationFrame = undefined;
+    if (!microphoneAnalyser && audioAnimationFrame !== undefined) {
+      cancelAnimationFrame(audioAnimationFrame);
+      audioAnimationFrame = undefined;
+      intensity = 0.18;
+    }
   }
 
   function closeSpeechVisualizer() {
@@ -244,6 +303,7 @@
   async function streamResponse(prompt: string, conversationHistory: ReturnType<typeof history>) {
     const assistantId = chatThread.add('assistant', '...');
     if (assistantId === undefined) throw new Error('Unable to create assistant message.');
+    console.log('[Sunny] LLM SaaS request started');
     const response = await fetch(endpoint('chat-stream'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -264,10 +324,15 @@
     const decoder = new TextDecoder();
     let fullText = '';
     let sentenceBuffer = '';
+    let receivedFirstChunk = false;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       const chunk = decoder.decode(value, { stream: true });
+      if (!receivedFirstChunk) {
+        receivedFirstChunk = true;
+        console.log('[Sunny] LLM SaaS stream started');
+      }
       fullText += chunk;
       sentenceBuffer += chunk;
       chatThread.update(assistantId, fullText);
@@ -279,6 +344,7 @@
     chatThread.update(assistantId, finalText);
     if (sentenceBuffer.trim()) queueSentence(sentenceBuffer);
     await speechQueue;
+    console.log('[Sunny] LLM SaaS response complete');
   }
 
   async function processTranscript(text: string) {
@@ -286,6 +352,7 @@
     responseInProgress = true;
     liveTranscript = '';
     status = 'thinking';
+    startWaitingProgress();
     try {
       const transcript = text.trim();
       if (!transcript) {
@@ -300,6 +367,7 @@
       reportStatus(error instanceof Error ? error.message : 'Voice request failed.', 'error');
     } finally {
       responseInProgress = false;
+      stopWaitingProgress();
       if (conversationActive) {
         status = 'listening';
         startSpeechRecognition();
@@ -346,7 +414,7 @@
       if (final.trim()) {
         liveTranscript = final.trim();
         console.log('[Sunny] Transcription:', liveTranscript);
-        reportStatus('Processing...', 'thinking');
+        reportStatus('', 'thinking');
         recognition.stop();
         void processTranscript(final);
       }
@@ -393,6 +461,7 @@
   function stopConversation() {
     conversationActive = false;
     stopSpeechRecognition();
+    stopWaitingProgress();
     mediaStream?.getTracks().forEach((track) => track.stop());
     mediaStream = undefined;
     stopMicrophoneVisualizer();
@@ -419,6 +488,7 @@
     speakerMuted = !speakerMuted;
     if (speakerMuted) {
       audio?.pause();
+      speakingSentence = '';
       stopSpeechVisualizer();
       intensity = conversationActive ? 0.35 : 0.18;
     } else if (audio && audio.src && status === 'speaking') {
@@ -448,8 +518,9 @@
       ? payload.prompts.filter((prompt): prompt is string => typeof prompt === 'string')
       : [];
     if (!prompts.length) throw new Error('No conversation prompt is configured.');
-    systemPrompt = prompts[0];
-    const opening = extractOpening(systemPrompt);
+    const basePrompt = prompts[0];
+    const opening = extractOpening(basePrompt);
+    systemPrompt = `${basePrompt}\n\n${voiceCapabilityInstruction}`;
     if (opening) {
       chatThread.add('assistant', opening);
       await speak(opening);
@@ -491,6 +562,7 @@
     <ChatThread
       messages={chatThread.messages}
       {liveTranscript}
+      {speakingSentence}
       {reviewMessageId}
       onUserMessageClick={selectUserMessage}
       onDeleteReview={deleteReviewedMessage}
@@ -498,10 +570,12 @@
     />
   </div>
   <Footer
-    downloadingModel="remote voice services"
-    downloadProgress={100}
-    downloadRemainingMs={0}
+    downloadingModel={status === 'thinking' ? 'Sunny is thinking...' : ''}
+    downloadProgress={waitingProgress}
+    downloadRemainingMs={waitingRemainingMs}
     downloadStatus={statusMessage}
+    indeterminate={false}
+    showProgress={status === 'thinking'}
     {microphoneMuted}
     {speakerMuted}
     onToggleMicrophone={toggleMicrophone}

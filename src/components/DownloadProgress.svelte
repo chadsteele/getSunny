@@ -4,10 +4,18 @@
     progress: number;
     remainingMs: number;
     status: string;
+    indeterminate?: boolean;
     showStatus?: boolean;
   }
 
-  let { title, progress, remainingMs, status, showStatus = true }: Props = $props();
+  let {
+    title,
+    progress,
+    remainingMs,
+    status,
+    indeterminate = false,
+    showStatus = true,
+  }: Props = $props();
 
   function formatDuration(milliseconds: number) {
     if (!Number.isFinite(milliseconds) || milliseconds <= 0) return '';
@@ -18,28 +26,28 @@
   }
 </script>
 
-{#if progress < 100}
-  <div class="download-status" aria-live="polite">
-    <div class="download-status-row">
-      <span>{title}</span>
+<div class="download-status" aria-live="polite">
+  <div class="download-status-row">
+    <span>{title}</span>
+    {#if !indeterminate}
       <span>{Math.round(progress)}% · {formatDuration(remainingMs)}</span>
-    </div>
-
-    <div
-      class="download-progress"
-      role="progressbar"
-      aria-label={`${title} download progress`}
-      aria-valuemin="0"
-      aria-valuemax="100"
-      aria-valuenow={progress}
-    >
-      <span style={`width: ${progress}%`}></span>
-    </div>
-    {#if showStatus}
-      <div>{status}</div>
     {/if}
   </div>
-{/if}
+
+  <div
+    class="download-progress"
+    role="progressbar"
+    aria-label={`${title} download progress`}
+    aria-valuemin="0"
+    aria-valuemax="100"
+    aria-valuenow={indeterminate ? undefined : progress}
+  >
+    <span class:indeterminate style={`width: ${progress}%`}></span>
+  </div>
+  {#if showStatus}
+    <div>{status}</div>
+  {/if}
+</div>
 
 <style>
   .download-status {
@@ -77,5 +85,17 @@
     background: #efb64d;
     box-shadow: 0 0 8px #e6a52b;
     transition: width 0.25s linear;
+  }
+  .download-progress span.indeterminate {
+    width: 35% !important;
+    animation: progress-indeterminate 1.2s ease-in-out infinite;
+  }
+  @keyframes progress-indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(285%);
+    }
   }
 </style>

@@ -29,6 +29,8 @@
     "vite": "^6.0.7"
   },
   "dependencies": {
+    "dompurify": "^3.4.17",
+    "marked": "^18.2.0",
     "openai": "^7.55.0"
   }
 }

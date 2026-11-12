@@ -6,6 +6,8 @@
     downloadProgress: number;
     downloadRemainingMs: number;
     downloadStatus: string;
+    indeterminate: boolean;
+    showProgress: boolean;
     microphoneMuted: boolean;
     speakerMuted: boolean;
     onToggleMicrophone: () => void | Promise<void>;
@@ -17,6 +19,8 @@
     downloadProgress,
     downloadRemainingMs,
     downloadStatus,
+    indeterminate,
+    showProgress,
     microphoneMuted,
     speakerMuted,
     onToggleMicrophone,
@@ -25,15 +29,18 @@
 </script>
 
 <footer class="session-footer">
-  <div class="progress-area">
-    <DownloadProgress
-      title={downloadingModel}
-      progress={downloadProgress}
-      remainingMs={downloadRemainingMs}
-      status={downloadStatus}
-      showStatus={false}
-    />
-  </div>
+  {#if showProgress}
+    <div class="progress-area">
+      <DownloadProgress
+        title={downloadingModel}
+        progress={downloadProgress}
+        remainingMs={downloadRemainingMs}
+        status={downloadStatus}
+        {indeterminate}
+        showStatus={false}
+      />
+    </div>
+  {/if}
   <div class="control-row">
     <button
       class:muted={speakerMuted}
