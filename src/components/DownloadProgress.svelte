@@ -10,7 +10,7 @@
   let { title, progress, remainingMs, status, showStatus = true }: Props = $props();
 
   function formatDuration(milliseconds: number) {
-    if (!Number.isFinite(milliseconds) || milliseconds <= 0) return 'estimating...';
+    if (!Number.isFinite(milliseconds) || milliseconds <= 0) return '';
     const totalSeconds = Math.ceil(milliseconds / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
@@ -18,26 +18,28 @@
   }
 </script>
 
-<div class="download-status" aria-live="polite">
-  <div class="download-status-row">
-    <span>{title}</span>
-    <span>{Math.round(progress)}% · {formatDuration(remainingMs)}</span>
-  </div>
+{#if progress < 100}
+  <div class="download-status" aria-live="polite">
+    <div class="download-status-row">
+      <span>{title}</span>
+      <span>{Math.round(progress)}% · {formatDuration(remainingMs)}</span>
+    </div>
 
-  <div
-    class="download-progress"
-    role="progressbar"
-    aria-label={`${title} download progress`}
-    aria-valuemin="0"
-    aria-valuemax="100"
-    aria-valuenow={progress}
-  >
-    <span style={`width: ${progress}%`}></span>
+    <div
+      class="download-progress"
+      role="progressbar"
+      aria-label={`${title} download progress`}
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow={progress}
+    >
+      <span style={`width: ${progress}%`}></span>
+    </div>
+    {#if showStatus}
+      <div>{status}</div>
+    {/if}
   </div>
-  {#if showStatus}
-    <div>{status}</div>
-  {/if}
-</div>
+{/if}
 
 <style>
   .download-status {

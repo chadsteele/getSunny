@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import ChatThread from './ChatThread.svelte';
   import Footer from './Footer.svelte';
-  import RecordingStatus from './RecordingStatus.svelte';
   import Sparkle from './Sparkle.svelte';
   import { createChatThreadStore } from '../lib/chat-thread-store.svelte';
 
@@ -31,13 +30,10 @@
   let liveTranscript = $state('');
   let systemPrompt = '';
   let conversationActive = $state(false);
-  let recordingElapsedMs = $state(0);
   let intensity = $state(0.18);
   let reviewMessageId = $state<number | undefined>();
   let mediaStream: MediaStream | undefined;
   let speechRecognition: SpeechRecognitionLike | undefined;
-  let recordingTimer: ReturnType<typeof setInterval> | undefined;
-  let recordingStartedAt = 0;
   let recognitionRestartBlocked = false;
   let audio: HTMLAudioElement | undefined;
   let audioUrl: string | undefined;
@@ -391,8 +387,6 @@
     status = 'listening';
     intensity = 0.45;
     startMicrophoneVisualizer();
-    recordingStartedAt = Date.now();
-    recordingTimer = setInterval(() => (recordingElapsedMs = Date.now() - recordingStartedAt), 250);
     startSpeechRecognition();
   }
 
@@ -402,9 +396,6 @@
     mediaStream?.getTracks().forEach((track) => track.stop());
     mediaStream = undefined;
     stopMicrophoneVisualizer();
-    if (recordingTimer) clearInterval(recordingTimer);
-    recordingTimer = undefined;
-    recordingElapsedMs = 0;
     audio?.pause();
     closeSpeechVisualizer();
     status = 'paused';
@@ -458,7 +449,11 @@
       : [];
     if (!prompts.length) throw new Error('No conversation prompt is configured.');
     systemPrompt = prompts[0];
-    await speak(extractOpening(systemPrompt));
+    const opening = extractOpening(systemPrompt);
+    if (opening) {
+      chatThread.add('assistant', opening);
+      await speak(opening);
+    }
   }
 
   onMount(() => {
@@ -493,9 +488,6 @@
 <main class="session-main">
   <div class="session-stage">
     <Sparkle {intensity} />
-    {#if conversationActive}
-      <RecordingStatus elapsedMs={recordingElapsedMs} />
-    {/if}
     <ChatThread
       messages={chatThread.messages}
       {liveTranscript}

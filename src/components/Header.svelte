@@ -24,12 +24,11 @@
     <span></span><span></span><span></span>
   </button>
   <div class="brand"><span></span></div>
-  <div class="step"><span class="step-dot"></span> Step <strong>1</strong></div>
+  <div class="step">Step 1: Dreaming</div>
 
   {#if menuOpen}
     <nav class="menu-popover" aria-label="Session menu">
-      <a href="#session">How it works</a>
-      <a href="#sound">Choose a sound</a>
+      <a href="https://mastermoney.ai">Register</a>
       <button type="button" class="menu-action" onclick={restoreChatHistory}>
         Restore chat history
       </button>

@@ -97,16 +97,16 @@
     min-width: 0;
     overflow: hidden;
     color: #b9934b;
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 0.04em;
     text-align: center;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .mute-button {
-    width: 37.5px;
-    height: 37.5px;
-    flex: 0 0 37.5px;
+    width: 56.25px;
+    height: 56.25px;
+    flex: 0 0 56.25px;
     display: grid;
     place-items: center;
     padding: 0;
@@ -137,8 +137,8 @@
     color: #ff9a79;
   }
   .mute-button svg {
-    width: 19px;
-    height: 19px;
+    width: 28.5px;
+    height: 28.5px;
     fill: none;
     stroke: currentColor;
     stroke-linecap: round;
