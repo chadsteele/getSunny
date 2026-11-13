@@ -1,11 +1,16 @@
 <script lang="ts">
   let menuOpen = false;
+  let deleteConfirmOpen = false;
+
+  function requestDeleteChatHistory() {
+    deleteConfirmOpen = true;
+    menuOpen = false;
+  }
 
   function deleteChatHistory() {
-    if (!confirm('Delete all saved chat history? This cannot be undone.')) return;
     localStorage.removeItem('sunny-chat-thread');
     window.dispatchEvent(new CustomEvent('sunny-chat-cleared'));
-    menuOpen = false;
+    deleteConfirmOpen = false;
   }
 
   function restoreChatHistory() {
@@ -53,7 +58,7 @@
         </svg>
         Restore chat history
       </button>
-      <button type="button" class="delete-chat-button" onclick={deleteChatHistory}>
+      <button type="button" class="delete-chat-button" onclick={requestDeleteChatHistory}>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5 7h14M10 4h4l1 3H9l1-3ZM8 10v7m4-7v7m4-7v7M6 7l1 14h10l1-14" />
         </svg>
@@ -62,6 +67,31 @@
     </nav>
   {/if}
 </header>
+
+{#if deleteConfirmOpen}
+  <div class="modal-backdrop" role="presentation">
+    <section
+      class="confirm-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-chat-title"
+      aria-describedby="delete-chat-description"
+    >
+      <h2 id="delete-chat-title">Delete chat history?</h2>
+      <p id="delete-chat-description">
+        All saved conversation history will be permanently deleted. This cannot be undone.
+      </p>
+      <div class="modal-actions">
+        <button type="button" class="cancel-button" onclick={() => (deleteConfirmOpen = false)}>
+          Cancel
+        </button>
+        <button type="button" class="confirm-delete-button" onclick={deleteChatHistory}>
+          Delete history
+        </button>
+      </div>
+    </section>
+  </div>
+{/if}
 
 <style>
   .topbar {
@@ -172,5 +202,60 @@
   .delete-chat-button:focus-visible,
   .menu-popover a:hover {
     color: #fff0bd;
+  }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: #000b;
+  }
+  .confirm-modal {
+    width: min(100%, 340px);
+    padding: 22px;
+    border: 1px solid #79551f;
+    border-radius: 14px;
+    background: #100b05;
+    box-shadow: 0 18px 50px #000;
+  }
+  .confirm-modal h2 {
+    margin: 0;
+    color: #fff0bd;
+    font-size: 19px;
+    font-weight: 500;
+  }
+  .confirm-modal p {
+    margin: 12px 0 20px;
+    color: #c29b55;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+  .modal-actions button {
+    padding: 9px 13px;
+    border: 1px solid #79551f;
+    border-radius: 7px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .cancel-button {
+    color: #eeb64e;
+    background: transparent;
+  }
+  .confirm-delete-button {
+    color: #fff0bd;
+    background: #7c3022;
+  }
+  .modal-actions button:hover,
+  .modal-actions button:focus-visible {
+    border-color: #efb64d;
+    box-shadow: 0 0 10px #eeb64e66;
   }
 </style>

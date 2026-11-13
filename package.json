@@ -7,7 +7,7 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "concurrently --kill-others-on-fail \"vite\" \"netlify functions:serve --offline --port 9999\"",
+    "dev": "concurrently --kill-others-on-fail \"vite\" \"netlify functions:serve --offline --functions netlify/functions --port 9999\"",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",

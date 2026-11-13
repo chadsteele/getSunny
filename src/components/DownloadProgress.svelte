@@ -30,7 +30,9 @@
   <div class="download-status-row">
     <span>{title}</span>
     {#if !indeterminate}
-      <span>{Math.round(progress)}% · {formatDuration(remainingMs)}</span>
+      <span
+        >{Math.round(progress)}%{remainingMs > 0 ? ` · ${formatDuration(remainingMs)}` : ''}</span
+      >
     {/if}
   </div>
 

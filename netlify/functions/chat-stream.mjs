@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { logger as console } from '../../logger.mjs';
 
 export default async function chatStream(request) {
   if (request.method !== 'POST') {

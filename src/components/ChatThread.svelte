@@ -10,6 +10,7 @@
     speakingSentence?: string;
     reviewMessageId?: number;
     onUserMessageClick?: (messageId: number) => void;
+    onAssistantMessageClick?: (message: string) => void;
     onDeleteReview?: () => void;
     onContinueReview?: () => void;
   }
@@ -20,6 +21,7 @@
     speakingSentence = '',
     reviewMessageId,
     onUserMessageClick,
+    onAssistantMessageClick,
     onDeleteReview,
     onContinueReview,
   }: Props = $props();
@@ -29,29 +31,64 @@
     return DOMPurify.sanitize(marked.parse(content, { async: false, breaks: true }));
   }
 
+  function replayAssistantMessage(event: MouseEvent, content: string) {
+    if (event.target instanceof HTMLElement && event.target.closest('a, button')) return;
+    onAssistantMessageClick?.(content);
+  }
+
+  function replayAssistantMessageFromKeyboard(event: KeyboardEvent, content: string) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onAssistantMessageClick?.(content);
+    }
+  }
+
   function renderMessage(content: string, highlight = '') {
     const html = renderMarkdown(content);
     if (!highlight.trim() || typeof DOMParser === 'undefined') return html;
     const document = new DOMParser().parseFromString(html, 'text/html');
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    while (walker.nextNode()) {
-      const node = walker.currentNode;
-      const content = node.textContent ?? '';
-      const index = content.indexOf(highlight);
-      if (index < 0 || !node.parentNode) continue;
-      const before = content.slice(0, index);
-      const match = content.slice(index, index + highlight.length);
-      const after = content.slice(index + highlight.length);
-      const fragment = document.createDocumentFragment();
-      if (before) fragment.append(document.createTextNode(before));
-      const marker = document.createElement('mark');
-      marker.className = 'speaking-sentence';
-      marker.textContent = match;
-      fragment.append(marker);
-      if (after) fragment.append(document.createTextNode(after));
-      node.parentNode.replaceChild(fragment, node);
-      break;
+    const textNodes: Text[] = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode as Text);
+    const source = textNodes.map((node) => node.data).join('');
+    const target = highlight.trim().replace(/\s+/g, ' ');
+    const collapsedSource = source.replace(/\s+/g, ' ');
+    const index = collapsedSource.toLocaleLowerCase().indexOf(target.toLocaleLowerCase());
+    if (index < 0) return DOMPurify.sanitize(document.body.innerHTML);
+
+    const sourcePositions: number[] = [];
+    let collapsedIndex = 0;
+    let previousWasWhitespace = false;
+    for (let sourceIndex = 0; sourceIndex < source.length; sourceIndex += 1) {
+      const isWhitespace = /\s/.test(source[sourceIndex]);
+      if (isWhitespace && previousWasWhitespace) continue;
+      sourcePositions[collapsedIndex] = sourceIndex;
+      collapsedIndex += 1;
+      previousWasWhitespace = isWhitespace;
     }
+
+    const rawStart = sourcePositions[index];
+    const rawEnd = sourcePositions[index + target.length - 1] + 1;
+    const locate = (offset: number) => {
+      let position = 0;
+      for (const node of textNodes) {
+        const nextPosition = position + node.data.length;
+        if (offset <= nextPosition) return { node, offset: offset - position };
+        position = nextPosition;
+      }
+      const lastNode = textNodes[textNodes.length - 1];
+      return { node: lastNode, offset: lastNode.data.length };
+    };
+    const start = locate(rawStart);
+    const end = locate(rawEnd);
+    if (!start.node || !end.node) return DOMPurify.sanitize(document.body.innerHTML);
+    const range = document.createRange();
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset);
+    const marker = document.createElement('mark');
+    marker.className = 'speaking-sentence';
+    marker.append(range.extractContents());
+    range.insertNode(marker);
     return DOMPurify.sanitize(document.body.innerHTML);
   }
 
@@ -84,7 +121,16 @@
           {@html renderMessage(message.content)}
         </button>
       {:else}
-        <div class="chat-bubble">{@html renderMessage(message.content, speakingSentence)}</div>
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div
+          class="chat-bubble"
+          role={onAssistantMessageClick ? 'button' : undefined}
+          tabindex={onAssistantMessageClick ? 0 : undefined}
+          onclick={(event) => replayAssistantMessage(event, message.content)}
+          onkeydown={(event) => replayAssistantMessageFromKeyboard(event, message.content)}
+        >
+          {@html renderMessage(message.content, speakingSentence)}
+        </div>
       {/if}
       {#if reviewMessageId === message.id}
         <div class="message-review-actions">
@@ -212,6 +258,10 @@
     max-width: 80%;
     font: inherit;
     text-align: left;
+    cursor: pointer;
+  }
+
+  .chat-row:not(.chat-user) .chat-bubble[role='button'] {
     cursor: pointer;
   }
 

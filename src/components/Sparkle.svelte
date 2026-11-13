@@ -1,8 +1,11 @@
 <script lang="ts">
-  export let intensity = 0.18;
+  interface Props {
+    intensity?: number;
+  }
 
-  $: scale = 0.06 + intensity * 0.94;
-  $: glow = 0.02 + intensity * 0.78;
+  let { intensity = 0.18 }: Props = $props();
+  let scale = $derived(0.06 + intensity * 0.94);
+  let glow = $derived(0.02 + intensity * 0.78);
 </script>
 
 <div class="sparkle-stage" style={`--spark-scale: ${scale}; --spark-glow: ${glow}`}>

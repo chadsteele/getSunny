@@ -2,8 +2,12 @@
   import { onMount } from 'svelte';
   import ChatThread from './ChatThread.svelte';
   import Footer from './Footer.svelte';
+  import PiperTTS from './PiperTTS.svelte';
   import Sparkle from './Sparkle.svelte';
   import { createChatThreadStore } from '../lib/chat-thread-store.svelte';
+  import { splitSentences } from '../lib/speech-text';
+  import { logger as console } from '../lib/logger';
+  import type { VoiceDownloadProgress } from '../lib/piper-voice-cache';
 
   type Status = 'loading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
   type SpeechRecognitionResultLike = { transcript: string };
@@ -23,14 +27,9 @@
     stop: () => void;
   };
   type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
-  type PiperEngine = {
-    generate: (text: string, voice: string, speaker?: number) => Promise<{ file: Blob }>;
-    destroy: () => void;
-  };
-
   const chatThread = createChatThreadStore();
   const voiceCapabilityInstruction =
-    'Voice capability: You can speak your responses aloud through the voice system. Never say that you cannot speak, talk, or use your voice. When asked to speak, respond naturally and confidently; do not describe implementation details unless the user asks.';
+    'Voice capability: You can speak your responses aloud through the voice system. Never say that you cannot speak, talk, or use your voice. When asked to speak, respond naturally and confidently; do not describe implementation details unless the user asks. Do not describe or verbalize emoji characters; omit emoji from spoken responses.';
   let status = $state<Status>('loading');
   let statusMessage = $state('Connecting to Sunny...');
   let liveTranscript = $state('');
@@ -39,29 +38,20 @@
   let conversationActive = $state(false);
   let intensity = $state(0.18);
   let reviewMessageId = $state<number | undefined>();
+  let piperTts: PiperTTS;
   let mediaStream: MediaStream | undefined;
   let speechRecognition: SpeechRecognitionLike | undefined;
   let recognitionRestartBlocked = false;
-  let audio: HTMLAudioElement | undefined;
-  let audioUrl: string | undefined;
-  let speechQueue = Promise.resolve();
-  let speechPrefetch = new Map<string, Promise<Blob>>();
-  let piperEngine: PiperEngine | undefined;
-  let piperEnginePromise: Promise<PiperEngine> | undefined;
-  const piperVoice = 'en_US-libritts_r-medium';
-  const maxCachedSpeech = 100;
+  let sunnySpeaking = false;
   let responseInProgress = false;
   let microphoneContext: AudioContext | undefined;
   let microphoneAnalyser: AnalyserNode | undefined;
   let microphoneData: Uint8Array<ArrayBuffer> | undefined;
-  let speechContext: AudioContext | undefined;
-  let speechAnalyser: AnalyserNode | undefined;
-  let speechData: Uint8Array<ArrayBuffer> | undefined;
-  let audioAnimationFrame: number | undefined;
-  let speechSource: MediaElementAudioSourceNode | undefined;
+  let microphoneAnimationFrame: number | undefined;
   let microphoneMuted = $state(true);
   let speakerMuted = $state(false);
   let waitingProgress = $state(0);
+  let voiceDownload = $state<VoiceDownloadProgress | null>(null);
   let waitingRemainingMs = $state(60_000);
   let waitingTimer: ReturnType<typeof setInterval> | undefined;
   let waitingStartedAt = 0;
@@ -108,155 +98,6 @@
       .replace(/^"|"$/g, '');
   }
 
-  function splitSentences(text: string) {
-    const sentences: string[] = [];
-    let remaining = text.trim();
-    while (remaining.length >= 200 || /[.!?](?:\s|$)/.test(remaining)) {
-      const match = remaining.match(/^([\s\S]{1,200}?[.!?])(?:\s|$)/);
-      if (!match) {
-        if (remaining.length < 200) break;
-        sentences.push(remaining.slice(0, 200).trim());
-        remaining = remaining.slice(200).trim();
-      } else {
-        sentences.push(match[1].trim());
-        remaining = remaining.slice(match[0].length).trim();
-      }
-    }
-    return { sentences, remaining };
-  }
-
-  function getPiperEngine() {
-    piperEnginePromise ??= import('piper-tts-web')
-      .then(({ PiperWebEngine }) => {
-        const engine = new PiperWebEngine() as PiperEngine;
-        piperEngine = engine;
-        return engine;
-      })
-      .catch((error: unknown) => {
-        piperEnginePromise = undefined;
-        throw error;
-      });
-    return piperEnginePromise;
-  }
-
-  async function preloadPiper() {
-    try {
-      const engine = await getPiperEngine();
-      await engine.generate('Ready.', piperVoice);
-      console.log('[Sunny] Piper voice model ready');
-    } catch (error) {
-      console.error('[Sunny] Piper preload failed:', error);
-      reportStatus(
-        error instanceof Error ? `Piper TTS failed: ${error.message}` : 'Piper TTS failed.',
-        'error',
-      );
-    }
-  }
-
-  function fetchSpeech(text: string) {
-    const cacheKey = text.trim().replace(/\s+/g, ' ');
-    const existing = speechPrefetch.get(cacheKey);
-    if (existing) {
-      console.log('[Sunny] Piper cache hit (browser)');
-      return existing;
-    }
-    console.log('[Sunny] Piper cache miss; generating locally');
-    const request = getPiperEngine()
-      .then((engine) => engine.generate(cacheKey, piperVoice))
-      .then(({ file }) => file)
-      .catch((error: unknown) => {
-        speechPrefetch.delete(cacheKey);
-        throw error;
-      });
-    speechPrefetch.set(cacheKey, request);
-    while (speechPrefetch.size > maxCachedSpeech) {
-      const oldest = speechPrefetch.keys().next().value;
-      if (oldest === undefined) break;
-      speechPrefetch.delete(oldest);
-    }
-    return request;
-  }
-
-  async function playSentence(text: string, blobPromise: Promise<Blob>) {
-    if (speakerMuted) return;
-    const blob = await blobPromise;
-    if (speakerMuted) return;
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    audioUrl = URL.createObjectURL(blob);
-    audio ??= new Audio();
-    audio.src = audioUrl;
-    audio.muted = speakerMuted;
-    status = 'speaking';
-    speakingSentence = text;
-    startSpeechVisualizer();
-    try {
-      await audio.play();
-      await new Promise<void>((resolve) => {
-        audio!.onended = () => resolve();
-        audio!.onerror = () => resolve();
-        audio!.onpause = () => {
-          if (speakerMuted) resolve();
-        };
-      });
-    } finally {
-      if (speakingSentence === text) speakingSentence = '';
-      stopSpeechVisualizer();
-      intensity = conversationActive ? 0.35 : 0.18;
-    }
-  }
-
-  function queueSentence(text: string) {
-    const sentence = text.trim();
-    if (!sentence || speakerMuted) return;
-    const blobPromise = fetchSpeech(sentence);
-    speechQueue = speechQueue
-      .then(() => playSentence(sentence, blobPromise))
-      .catch((error: unknown) => {
-        console.error('[Sunny] TTS playback failed:', error);
-        reportStatus(error instanceof Error ? error.message : 'Speech playback failed.', 'error');
-      });
-  }
-
-  async function speak(text: string) {
-    const { sentences, remaining } = splitSentences(text);
-    sentences.forEach(queueSentence);
-    if (remaining.trim()) queueSentence(remaining);
-    await speechQueue;
-  }
-
-  function getAudioLevel(analyser: AnalyserNode, data: Uint8Array<ArrayBuffer>) {
-    analyser.getByteTimeDomainData(data);
-    let sum = 0;
-    for (const sample of data) {
-      const amplitude = (sample - 128) / 128;
-      sum += amplitude * amplitude;
-    }
-    return Math.sqrt(sum / data.length);
-  }
-
-  function updateAudioIntensity() {
-    const microphoneLevel =
-      microphoneAnalyser && microphoneData
-        ? getAudioLevel(microphoneAnalyser, microphoneData) * 4
-        : 0;
-    const speechLevel =
-      speechAnalyser && speechData ? getAudioLevel(speechAnalyser, speechData) * 7 : 0;
-    const level = Math.max(microphoneLevel, speechLevel);
-    if (!microphoneAnalyser && !speechAnalyser) {
-      audioAnimationFrame = undefined;
-      intensity = 0.18;
-      return;
-    }
-    intensity = Math.min(0.95, Math.max(0.18, level));
-    audioAnimationFrame = requestAnimationFrame(updateAudioIntensity);
-  }
-
-  function startAudioDriver() {
-    if (audioAnimationFrame === undefined) {
-      audioAnimationFrame = requestAnimationFrame(updateAudioIntensity);
-    }
-  }
-
   function startMicrophoneVisualizer() {
     if (!mediaStream || microphoneAnalyser) return;
     microphoneContext = new AudioContext();
@@ -264,51 +105,32 @@
     microphoneAnalyser.fftSize = 256;
     microphoneData = new Uint8Array(microphoneAnalyser.fftSize);
     microphoneContext.createMediaStreamSource(mediaStream).connect(microphoneAnalyser);
-    startAudioDriver();
+    microphoneAnimationFrame = requestAnimationFrame(updateMicrophoneIntensity);
   }
 
   function stopMicrophoneVisualizer() {
+    if (microphoneAnimationFrame !== undefined) {
+      cancelAnimationFrame(microphoneAnimationFrame);
+      microphoneAnimationFrame = undefined;
+    }
     microphoneAnalyser = undefined;
     microphoneData = undefined;
-    if (!speechAnalyser && audioAnimationFrame !== undefined) {
-      cancelAnimationFrame(audioAnimationFrame);
-      audioAnimationFrame = undefined;
-      intensity = 0.18;
-    }
+    intensity = 0.18;
     void microphoneContext?.close();
     microphoneContext = undefined;
   }
 
-  function startSpeechVisualizer() {
-    if (!audio || speechAnalyser) return;
-    speechContext ??= new AudioContext();
-    speechAnalyser ??= speechContext.createAnalyser();
-    speechAnalyser.fftSize = 256;
-    speechData ??= new Uint8Array(speechAnalyser.fftSize);
-    speechSource ??= speechContext.createMediaElementSource(audio);
-    speechSource.connect(speechAnalyser);
-    speechAnalyser.connect(speechContext.destination);
-    void speechContext.resume();
-    startAudioDriver();
-  }
-
-  function stopSpeechVisualizer() {
-    if (!microphoneAnalyser && audioAnimationFrame !== undefined) {
-      cancelAnimationFrame(audioAnimationFrame);
-      audioAnimationFrame = undefined;
-      intensity = 0.18;
+  function updateMicrophoneIntensity() {
+    if (!microphoneAnalyser || !microphoneData) return;
+    microphoneAnalyser.getByteTimeDomainData(microphoneData);
+    let sum = 0;
+    for (const sample of microphoneData) {
+      const amplitude = (sample - 128) / 128;
+      sum += amplitude * amplitude;
     }
-  }
-
-  function closeSpeechVisualizer() {
-    stopSpeechVisualizer();
-    speechSource?.disconnect();
-    speechAnalyser?.disconnect();
-    void speechContext?.close();
-    speechSource = undefined;
-    speechAnalyser = undefined;
-    speechData = undefined;
-    speechContext = undefined;
+    const level = Math.sqrt(sum / microphoneData.length);
+    intensity = Math.min(0.9, Math.max(0.18, level * 4));
+    microphoneAnimationFrame = requestAnimationFrame(updateMicrophoneIntensity);
   }
 
   function history() {
@@ -357,13 +179,12 @@
       sentenceBuffer += chunk;
       chatThread.update(assistantId, fullText);
       const split = splitSentences(sentenceBuffer);
-      split.sentences.forEach(queueSentence);
+      split.sentences.forEach((sentence) => void piperTts.speak(sentence));
       sentenceBuffer = split.remaining;
     }
     const finalText = fullText.trim();
     chatThread.update(assistantId, finalText);
-    if (sentenceBuffer.trim()) queueSentence(sentenceBuffer);
-    await speechQueue;
+    await piperTts.speak(sentenceBuffer);
     console.log('[Sunny] LLM SaaS response complete');
   }
 
@@ -399,11 +220,20 @@
     recognitionRestartBlocked = true;
     speechRecognition?.stop();
     speechRecognition = undefined;
+    mediaStream?.getAudioTracks().forEach((track) => (track.enabled = false));
     stopMicrophoneVisualizer();
   }
 
   function startSpeechRecognition() {
-    if (microphoneMuted || !conversationActive || responseInProgress || !mediaStream) return;
+    if (
+      microphoneMuted ||
+      !conversationActive ||
+      responseInProgress ||
+      sunnySpeaking ||
+      !mediaStream
+    )
+      return;
+    mediaStream.getAudioTracks().forEach((track) => (track.enabled = true));
     const browserWindow = window as Window & {
       SpeechRecognition?: SpeechRecognitionConstructor;
       webkitSpeechRecognition?: SpeechRecognitionConstructor;
@@ -420,6 +250,7 @@
     recognition.interimResults = true;
     recognition.lang = navigator.language || 'en-US';
     recognition.onresult = (event: SpeechRecognitionEventLike) => {
+      if (speechRecognition !== recognition || recognitionRestartBlocked || sunnySpeaking) return;
       let interim = '';
       let final = '';
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -449,7 +280,8 @@
         !recognitionRestartBlocked &&
         conversationActive &&
         !microphoneMuted &&
-        !responseInProgress
+        !responseInProgress &&
+        !sunnySpeaking
       ) {
         startSpeechRecognition();
       }
@@ -470,7 +302,6 @@
       },
     });
     mediaStream.getAudioTracks().forEach((track) => (track.enabled = !microphoneMuted));
-    if (audio) audio.muted = speakerMuted;
     conversationActive = true;
     status = 'listening';
     intensity = 0.45;
@@ -485,8 +316,7 @@
     mediaStream?.getTracks().forEach((track) => track.stop());
     mediaStream = undefined;
     stopMicrophoneVisualizer();
-    audio?.pause();
-    closeSpeechVisualizer();
+    piperTts.stop();
     status = 'paused';
   }
 
@@ -507,12 +337,7 @@
   function toggleSpeaker() {
     speakerMuted = !speakerMuted;
     if (speakerMuted) {
-      audio?.pause();
-      speakingSentence = '';
-      stopSpeechVisualizer();
-      intensity = conversationActive ? 0.35 : 0.18;
-    } else if (audio && audio.src && status === 'speaking') {
-      void audio.play();
+      piperTts.stop();
     }
   }
 
@@ -530,6 +355,37 @@
     reviewMessageId = undefined;
   }
 
+  function replayAssistantMessage(message: string) {
+    if (speakerMuted) return;
+    piperTts.stop();
+    void piperTts.speak(message);
+  }
+
+  function handlePiperSentence(sentence: string) {
+    sunnySpeaking = true;
+    stopSpeechRecognition();
+    speakingSentence = sentence;
+    status = 'speaking';
+  }
+
+  function handlePiperEnd() {
+    sunnySpeaking = false;
+    speakingSentence = '';
+  }
+
+  function handlePiperIntensity(nextIntensity: number) {
+    intensity = nextIntensity;
+  }
+
+  function handlePiperError(error: unknown) {
+    stopConversation();
+    microphoneMuted = true;
+    reportStatus(
+      error instanceof Error ? `Piper TTS failed: ${error.message}` : 'Piper TTS failed.',
+      'error',
+    );
+  }
+
   async function loadPrompt() {
     const response = await fetch('/api/prompt/', { cache: 'no-store' });
     if (!response.ok) throw new Error(`Prompt request failed: ${response.status}`);
@@ -542,8 +398,7 @@
     const opening = extractOpening(basePrompt);
     systemPrompt = `${basePrompt}\n\n${voiceCapabilityInstruction}`;
     if (opening) {
-      chatThread.add('assistant', opening);
-      await speak(opening);
+      await piperTts.speak(opening, () => chatThread.add('assistant', opening));
     }
   }
 
@@ -558,9 +413,9 @@
     };
     window.addEventListener('sunny-chat-cleared', clearChatHistory);
     window.addEventListener('sunny-chat-restore', restoreChatHistory);
-    void preloadPiper();
     void loadPrompt()
       .then(() => {
+        if (status === 'error') return;
         status = 'paused';
         reportStatus('Ready — press mic to talk', 'paused');
       })
@@ -571,15 +426,21 @@
       window.removeEventListener('sunny-chat-cleared', clearChatHistory);
       window.removeEventListener('sunny-chat-restore', restoreChatHistory);
       stopConversation();
-      closeSpeechVisualizer();
-      piperEngine?.destroy();
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   });
 </script>
 
 <main class="session-main">
   <div class="session-stage">
+    <PiperTTS
+      bind:this={piperTts}
+      muted={speakerMuted}
+      onSpeakingSentence={handlePiperSentence}
+      onSpeakingEnd={handlePiperEnd}
+      onIntensityChange={handlePiperIntensity}
+      onDownloadProgress={(progress) => (voiceDownload = progress)}
+      onError={handlePiperError}
+    />
     <Sparkle {intensity} />
     <ChatThread
       messages={chatThread.messages}
@@ -587,17 +448,18 @@
       {speakingSentence}
       {reviewMessageId}
       onUserMessageClick={selectUserMessage}
+      onAssistantMessageClick={replayAssistantMessage}
       onDeleteReview={deleteReviewedMessage}
       onContinueReview={acceptReviewedMessage}
     />
   </div>
   <Footer
-    downloadingModel={status === 'thinking' ? 'Sunny is thinking...' : ''}
-    downloadProgress={waitingProgress}
-    downloadRemainingMs={waitingRemainingMs}
+    downloadingModel={voiceDownload ? 'Downloading Sunny’s voice...' : 'Sunny is thinking...'}
+    downloadProgress={voiceDownload ? (voiceDownload.percent ?? 0) : waitingProgress}
+    downloadRemainingMs={voiceDownload ? voiceDownload.remainingMs : waitingRemainingMs}
     downloadStatus={statusMessage}
-    indeterminate={false}
-    showProgress={status === 'thinking'}
+    indeterminate={voiceDownload !== null && voiceDownload.percent === null}
+    showProgress={voiceDownload !== null || status === 'thinking'}
     {microphoneMuted}
     {speakerMuted}
     onToggleMicrophone={toggleMicrophone}

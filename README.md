@@ -4,10 +4,13 @@ A tiny Svelte experience inspired by the supplied mobile reference. The central 
 
 The app uses a browser-local voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Speech is transcribed immediately by the browser's built-in Web Speech API, responses stream from Venice `zai-org-glm-5-2`, and sentence audio is synthesized locally with Piper using the `en_US-libritts_r-medium` voice. Chrome and Edge provide the most consistent browser speech-recognition support. The existing [`Sparkle.svelte`](./src/components/Sparkle.svelte) and [`AudioControls.svelte`](./src/components/AudioControls.svelte) components remain the visual sparkle and pause/resume control.
 
-Piper audio is generated in the browser and cached for the current session by
-normalized text and voice. The Piper runtime and WASM assets are served locally;
-the selected voice model is downloaded and cached by the Piper voice provider on
-first use.
+Piper audio is generated directly in the browser for each sentence. The Piper runtime and WASM assets are served locally.
+The voice model is downloaded on first use and cached in the browser's IndexedDB for later visits. On subsequent
+visits, Sunny checks for voice updates in the background; a downloaded update is used on the next visit. The browser
+may evict the cache, or private browsing may prevent it from persisting. The footer progress bar shows voice downloads
+when the server provides their size, or an indeterminate indicator otherwise.
+Piper runtime assets bypass the browser HTTP cache to avoid invalid cached responses. If an asset load fails, Sunny
+retries with a fresh URL and reports an error if that also fails.
 
 ## Local development
 

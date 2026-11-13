@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { logger as console } from '../logger.mjs';
 
 const apiKey = process.env.VENICE_API_KEY;
 if (!apiKey) {
