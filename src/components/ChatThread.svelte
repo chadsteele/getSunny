@@ -26,6 +26,7 @@
     onContinueReview,
   }: Props = $props();
   let chatThread: HTMLDivElement | undefined;
+  let skipNextHighlightScroll = false;
   const visibleMessages = $derived.by(() => {
     const chatMessages = messages.filter((message) => message.role !== 'status');
     return chatMessages.slice(-5);
@@ -120,20 +121,33 @@
     return undefined;
   });
 
+  export async function scrollToBottomBeforeSpeech() {
+    await tick();
+    chatThread?.scrollTo({ top: chatThread.scrollHeight, behavior: 'instant' });
+  }
+
+  export function setNextHighlightScrollSuppressed(suppressed: boolean) {
+    skipNextHighlightScroll = suppressed;
+  }
+
   $effect(() => {
-    const messageCount = messages.length;
-    const activeSentence = speakingSentence;
-    void messageCount;
+    void messages.length;
     void tick().then(() =>
-      chatThread?.scrollTo({ top: chatThread.scrollHeight, behavior: 'smooth' }),
+      chatThread?.scrollTo({ top: chatThread.scrollHeight, behavior: 'instant' }),
     );
-    if (activeSentence) {
-      void tick().then(() =>
-        [...(chatThread?.querySelectorAll('.speaking-sentence') ?? [])]
-          .at(-1)
-          ?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
-      );
+  });
+
+  $effect(() => {
+    if (!speakingSentence) return;
+    if (skipNextHighlightScroll) {
+      skipNextHighlightScroll = false;
+      return;
     }
+    void tick().then(() =>
+      [...(chatThread?.querySelectorAll('.speaking-sentence') ?? [])]
+        .at(-1)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+    );
   });
 </script>
 

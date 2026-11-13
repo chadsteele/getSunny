@@ -10,6 +10,8 @@ The first entry in [`prompts.ts`](./src/lib/prompts.ts) is the spoken opening; t
 
 Use **Show logger** in the menu to view the most recent 200 application log entries on the device; **Show chat** returns to the conversation. Logs are kept in memory only and may include conversation text and error details.
 
+Use **Report** in the menu to request a JSON session report from Venice and display it in the logger without speech. The report uses the conversation history available at the time of the request, and can contain sensitive conversation details. Its required fields and rating are validated before logging; errors appear in the logger.
+
 Speech is sent after the microphone level falls below the speech threshold for the interval set by `speechSilenceTimeoutMs` in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Recordings are limited to 60 seconds. Transcription is returned after recording, not displayed live. Audio and conversation text are sent to the configured providers, so an internet connection and working provider credentials are required.
 
 ## Local development
@@ -43,6 +45,12 @@ The app is mobile-first and becomes a framed phone layout on larger screens.
 ```bash
 npm run check
 npm run build
+```
+
+To run the report validation tests with Node.js 22.6 or newer:
+
+```bash
+node --experimental-strip-types --test tests/session-report.test.mjs
 ```
 
 ## Publish to GitHub

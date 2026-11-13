@@ -96,17 +96,13 @@
     width: 100%;
   }
   .status-area {
-    display: flex;
     flex: 1 1 auto;
-    justify-content: center;
     min-width: 0;
-    overflow: hidden;
     color: #b9934b;
     font-size: 12px;
     letter-spacing: 0.04em;
     text-align: center;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .mute-button {
     width: 56.25px;

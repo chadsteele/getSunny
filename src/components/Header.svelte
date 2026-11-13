@@ -5,9 +5,10 @@
   interface Props {
     showingLogs: boolean;
     onToggleView: () => void;
+    onReport: () => void;
   }
 
-  let { showingLogs, onToggleView }: Props = $props();
+  let { showingLogs, onToggleView, onReport }: Props = $props();
   let menuOpen = $state(false);
   let deleteConfirmOpen = $state(false);
   let menuButton: HTMLButtonElement;
@@ -114,6 +115,19 @@
           <path d="M4 5h16v14H4zM7 9h10M7 12h10M7 15h7" />
         </svg>
         {showingLogs ? 'Show chat' : 'Show logger'}
+      </button>
+      <button
+        type="button"
+        class="menu-action"
+        onclick={() => {
+          onReport();
+          closeMenu();
+        }}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 3h10l4 4v14H5zM15 3v5h4M8 12h8M8 16h8" />
+        </svg>
+        Report
       </button>
       <button type="button" class="menu-action" onclick={restoreChatHistory}>
         <svg viewBox="0 0 24 24" aria-hidden="true">

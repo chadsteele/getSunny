@@ -5,7 +5,7 @@
 
   interface Props {
     muted: boolean;
-    onSpeakingSentence?: (sentence: string) => void;
+    onSpeakingSentence?: (sentence: string, keepBottom: boolean) => void;
     onSpeakingEnd?: () => void;
     onIntensityChange?: (intensity: number) => void;
     onError?: (error: unknown) => void;
@@ -121,7 +121,7 @@
     text: string,
     job: SpeechJob,
     requestVersion: number,
-    onReady?: () => void,
+    onReady?: () => boolean | void | Promise<boolean | void>,
   ) {
     if (muted || requestVersion !== playbackVersion) return;
     if (!job.result) throw new Error('Speech request was not started.');
@@ -135,8 +135,9 @@
     audio ??= new Audio();
     audio.src = audioUrl;
     audio.muted = muted;
-    onReady?.();
-    onSpeakingSentence?.(text);
+    const keepBottom = (await onReady?.()) === true;
+    if (muted || requestVersion !== playbackVersion) return;
+    onSpeakingSentence?.(text, keepBottom);
     startVisualizer();
     try {
       try {
@@ -173,7 +174,7 @@
     }
   }
 
-  function queueSentence(text: string, onReady?: () => void) {
+  function queueSentence(text: string, onReady?: () => boolean | void | Promise<boolean | void>) {
     const displaySentence = normalizeForDisplay(text);
     const sentence = normalizeForSpeech(text);
     if (!displaySentence || !sentence || muted) return;
@@ -200,13 +201,13 @@
       });
   }
 
-  export function speak(text: string, onReady?: () => void) {
+  export function speak(text: string, onReady?: () => boolean | void | Promise<boolean | void>) {
     const { sentences, remaining } = splitSentences(text);
     let notified = false;
     const notifyReady = () => {
       if (notified) return;
       notified = true;
-      onReady?.();
+      return onReady?.();
     };
     sentences.forEach((sentence) => queueSentence(sentence, notifyReady));
     if (remaining.trim()) queueSentence(remaining, notifyReady);

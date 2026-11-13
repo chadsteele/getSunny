@@ -9,6 +9,7 @@
   import { createChatThreadStore } from '../lib/chat-thread-store.svelte';
   import prompts from '../lib/prompts';
   import { splitSentences } from '../lib/speech-text';
+  import { parseSessionReport, reportSystemPrompt } from '../lib/session-report';
   import { logger as console } from '../lib/logger';
 
   let { showingLogs }: { showingLogs: boolean } = $props();
@@ -27,6 +28,7 @@
   let intensity = $state(0.18);
   let reviewMessageId = $state<number | undefined>();
   let remoteTts: RemoteTTS;
+  let chatThreadView = $state<ChatThread | undefined>();
   let speechToText: SpeechToText;
   let mediaStream = $state<MediaStream | undefined>();
   let microphoneVersion = 0;
@@ -34,6 +36,7 @@
   let transcriptionAbort: AbortController | undefined;
   let sunnySpeaking = $state(false);
   let responseInProgress = $state(false);
+  let reportInProgress = false;
   let microphoneContext: AudioContext | undefined;
   let microphoneAnalyser: AnalyserNode | undefined;
   let microphoneData: Uint8Array<ArrayBuffer> | undefined;
@@ -132,6 +135,35 @@
       }));
   }
 
+  export async function generateReport() {
+    if (reportInProgress) {
+      console.warn('[Sunny] A session report is already being generated.');
+      return;
+    }
+    reportInProgress = true;
+    console.log('[Sunny] Generating session report...');
+    try {
+      const response = await fetch(endpoint('chat-stream'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          systemPrompt: reportSystemPrompt,
+          history: history(),
+          prompt: 'Produce the session report as JSON.',
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`Report request failed (${response.status}): ${await response.text()}`);
+      }
+      const report = parseSessionReport(await response.text());
+      console.log('[Sunny] Session report:\n' + JSON.stringify(report, null, 2));
+    } catch (error) {
+      console.error('[Sunny] Session report failed:', error);
+    } finally {
+      reportInProgress = false;
+    }
+  }
+
   async function streamResponse(prompt: string, conversationHistory: ReturnType<typeof history>) {
     const assistantId = chatThread.add('assistant', '...');
     if (assistantId === undefined) throw new Error('Unable to create assistant message.');
@@ -157,6 +189,13 @@
     let fullText = '';
     let sentenceBuffer = '';
     let receivedFirstChunk = false;
+    let preparedFirstSpeech = false;
+    const prepareFirstSpeech = async () => {
+      if (preparedFirstSpeech) return;
+      preparedFirstSpeech = true;
+      await chatThreadView?.scrollToBottomBeforeSpeech();
+      return true;
+    };
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -169,12 +208,12 @@
       sentenceBuffer += chunk;
       chatThread.update(assistantId, fullText);
       const split = splitSentences(sentenceBuffer);
-      split.sentences.forEach((sentence) => void remoteTts.speak(sentence));
+      split.sentences.forEach((sentence) => void remoteTts.speak(sentence, prepareFirstSpeech));
       sentenceBuffer = split.remaining;
     }
     const finalText = fullText.trim();
     chatThread.update(assistantId, finalText);
-    await remoteTts.speak(sentenceBuffer);
+    await remoteTts.speak(sentenceBuffer, prepareFirstSpeech);
     console.log('[Sunny] LLM SaaS response complete');
   }
 
@@ -342,15 +381,17 @@
     void remoteTts.speak(message);
   }
 
-  function handleSpeakingSentence(sentence: string) {
+  function handleSpeakingSentence(sentence: string, keepBottom: boolean) {
     sunnySpeaking = true;
     stopListening();
+    chatThreadView?.setNextHighlightScrollSuppressed(keepBottom);
     speakingSentence = sentence;
     status = 'speaking';
   }
 
   function handleSpeakingEnd() {
     sunnySpeaking = false;
+    chatThreadView?.setNextHighlightScrollSuppressed(false);
     speakingSentence = '';
     if (conversationActive && !responseInProgress && !microphoneMuted) {
       status = 'listening';
@@ -384,7 +425,11 @@
     const opening = extractOpening(openingPrompt);
     systemPrompt = `${conversationPrompt}\n\n${voiceCapabilityInstruction}`;
     if (opening) {
-      await remoteTts.speak(opening, () => chatThread.add('assistant', opening));
+      await remoteTts.speak(opening, async () => {
+        chatThread.add('assistant', opening);
+        await chatThreadView?.scrollToBottomBeforeSpeech();
+        return true;
+      });
     }
   }
 
@@ -449,6 +494,7 @@
     {:else}
       <Sparkle {intensity} />
       <ChatThread
+        bind:this={chatThreadView}
         messages={chatThread.messages}
         {liveTranscript}
         {speakingSentence}

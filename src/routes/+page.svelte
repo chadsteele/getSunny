@@ -5,6 +5,7 @@
   import '../styles.css';
 
   let showingLogs = $state(false);
+  let voiceAgent: VoiceAgent;
 </script>
 
 <svelte:head>
@@ -15,6 +16,13 @@
 </svelte:head>
 
 <Layout>
-  <Header {showingLogs} onToggleView={() => (showingLogs = !showingLogs)} />
-  <VoiceAgent {showingLogs} />
+  <Header
+    {showingLogs}
+    onToggleView={() => (showingLogs = !showingLogs)}
+    onReport={() => {
+      showingLogs = true;
+      void voiceAgent.generateReport();
+    }}
+  />
+  <VoiceAgent bind:this={voiceAgent} {showingLogs} />
 </Layout>
