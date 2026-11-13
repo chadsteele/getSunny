@@ -49,7 +49,7 @@
   }
 
   function prefetchSpeech() {
-    for (const job of speechJobs.slice(0, 2)) {
+    for (const job of speechJobs.slice(0, 3)) {
       job.result ??= generateSpeech(job.sentence, job.controller.signal).then(
         (blob): SpeechResult => ({ blob }),
         (error: unknown): SpeechResult => ({ error }),

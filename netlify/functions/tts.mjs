@@ -15,8 +15,8 @@ export default async function tts(request) {
     }
     const speech = await new OpenAI({ apiKey }).audio.speech.create({
       model: 'gpt-4o-mini-tts',
-      voice: 'sage',
-      speed: 1.5,
+      voice: 'nova',
+      speed: 1.3,
       input: text.trim(),
       instructions:
         'Speak naturally and conversationally, like a warm, attentive person. Use a normal speaking pace with smooth transitions, natural emphasis, and brief pauses only where punctuation calls for them.',
