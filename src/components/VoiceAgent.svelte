@@ -39,6 +39,7 @@
   let speakerMuted = $state(false);
   let waitingProgress = $state(0);
   let voiceDownload = $state<VoiceDownloadProgress | null>(null);
+  let speechRetry = $state<{ attempt: number; maxAttempts: number } | null>(null);
   let waitingRemainingMs = $state(60_000);
   let waitingTimer: ReturnType<typeof setInterval> | undefined;
   let waitingStartedAt = 0;
@@ -228,8 +229,21 @@
   }
 
   function handleSpeechError(error: unknown) {
-    stopListening();
+    speechRetry = null;
+    stopConversation();
+    microphoneMuted = true;
     reportStatus(error instanceof Error ? error.message : 'Speech recognition failed.', 'error');
+  }
+
+  function handleSpeechRetry(attempt: number, maxAttempts: number) {
+    speechRetry = { attempt, maxAttempts };
+    reportStatus(`Reconnecting speech recognition (${attempt}/${maxAttempts})...`);
+  }
+
+  function handleSpeechReady() {
+    if (!speechRetry) return;
+    speechRetry = null;
+    reportStatus('Listening');
   }
 
   async function startConversation() {
@@ -251,6 +265,7 @@
 
   function stopConversation() {
     conversationActive = false;
+    speechRetry = null;
     stopListening();
     stopWaitingProgress();
     mediaStream?.getTracks().forEach((track) => track.stop());
@@ -302,6 +317,7 @@
 
   function handlePiperSentence(sentence: string) {
     sunnySpeaking = true;
+    speechRetry = null;
     stopListening();
     speakingSentence = sentence;
     status = 'speaking';
@@ -392,6 +408,8 @@
       silenceTimeoutMs={speechSilenceTimeoutMs}
       onTranscript={handleTranscript}
       onInterimTranscript={(transcript) => (liveTranscript = transcript)}
+      onRetry={handleSpeechRetry}
+      onReady={handleSpeechReady}
       onError={handleSpeechError}
     />
     {#if showingLogs}
@@ -411,12 +429,16 @@
     {/if}
   </div>
   <Footer
-    downloadingModel={voiceDownload ? 'Downloading Sunny’s voice...' : 'Sunny is thinking...'}
+    downloadingModel={voiceDownload
+      ? 'Downloading Sunny’s voice...'
+      : speechRetry
+        ? `Reconnecting speech recognition (${speechRetry.attempt}/${speechRetry.maxAttempts})...`
+        : 'Sunny is thinking...'}
     downloadProgress={voiceDownload ? (voiceDownload.percent ?? 0) : waitingProgress}
     downloadRemainingMs={voiceDownload ? voiceDownload.remainingMs : waitingRemainingMs}
     downloadStatus={statusMessage}
-    indeterminate={voiceDownload !== null && voiceDownload.percent === null}
-    showProgress={voiceDownload !== null || status === 'thinking'}
+    indeterminate={voiceDownload ? voiceDownload.percent === null : speechRetry !== null}
+    showProgress={voiceDownload !== null || speechRetry !== null || status === 'thinking'}
     {microphoneMuted}
     {speakerMuted}
     onToggleMicrophone={toggleMicrophone}

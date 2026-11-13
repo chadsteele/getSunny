@@ -6,6 +6,8 @@
     silenceTimeoutMs: number;
     onTranscript: (transcript: string) => void;
     onInterimTranscript: (transcript: string) => void;
+    onRetry: (attempt: number, maxAttempts: number) => void;
+    onReady: () => void;
     onError: (error: unknown) => void;
   }
 
@@ -14,11 +16,12 @@
     resultIndex: number;
     results: ArrayLike<{ isFinal: boolean; 0: SpeechRecognitionResultLike }>;
   };
-  type SpeechRecognitionErrorEventLike = Event & { error: string };
+  type SpeechRecognitionErrorEventLike = Event & { error: string; message?: string };
   type SpeechRecognitionLike = {
     continuous: boolean;
     interimResults: boolean;
     lang: string;
+    onstart: (() => void) | null;
     onend: (() => void) | null;
     onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
     onresult: ((event: SpeechRecognitionEventLike) => void) | null;
@@ -27,11 +30,23 @@
   };
   type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
-  let { active, silenceTimeoutMs, onTranscript, onInterimTranscript, onError }: Props = $props();
+  let {
+    active,
+    silenceTimeoutMs,
+    onTranscript,
+    onInterimTranscript,
+    onRetry,
+    onReady,
+    onError,
+  }: Props = $props();
   let recognition: SpeechRecognitionLike | undefined;
   let restartBlocked = true;
   let pendingFinal = '';
   let silenceTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryAttempts = 0;
+  const maxRetryAttempts = 3;
+  const retryDelayMs = 1000;
 
   function clearSilenceTimer() {
     if (silenceTimer) clearTimeout(silenceTimer);
@@ -41,8 +56,35 @@
   function stopRecognition() {
     restartBlocked = true;
     clearSilenceTimer();
+    if (retryTimer !== undefined) clearTimeout(retryTimer);
+    retryTimer = undefined;
+    retryAttempts = 0;
     recognition?.stop();
     recognition = undefined;
+  }
+
+  function retryRecognition(reason: string) {
+    if (!active || restartBlocked || retryTimer !== undefined) return;
+    clearSilenceTimer();
+    recognition = undefined;
+    if (retryAttempts >= maxRetryAttempts) {
+      restartBlocked = true;
+      onError(
+        new Error(
+          `Speech recognition failed after ${maxRetryAttempts} retries (${reason}). Check microphone permission and try again.`,
+        ),
+      );
+      return;
+    }
+    retryAttempts += 1;
+    console.warn(
+      `[Sunny] Resetting speech recognition after ${reason}; retry ${retryAttempts}/${maxRetryAttempts} in ${retryDelayMs}ms.`,
+    );
+    onRetry(retryAttempts, maxRetryAttempts);
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      if (active && !restartBlocked) startRecognition();
+    }, retryDelayMs);
   }
 
   function scheduleTranscript() {
@@ -79,8 +121,15 @@
     currentRecognition.continuous = true;
     currentRecognition.interimResults = true;
     currentRecognition.lang = navigator.language || 'en-US';
+    currentRecognition.onstart = () => {
+      if (recognition !== currentRecognition || restartBlocked) return;
+      console.log('[Sunny] Speech recognition listening:', currentRecognition.lang);
+      onReady();
+      if (pendingFinal.trim()) scheduleTranscript();
+    };
     currentRecognition.onresult = (event: SpeechRecognitionEventLike) => {
       if (recognition !== currentRecognition || restartBlocked) return;
+      retryAttempts = 0;
       let interim = '';
       let finalized = '';
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -95,10 +144,25 @@
       if (finalized.trim() || interim.trim()) scheduleTranscript();
     };
     currentRecognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
-      console.warn('[Sunny] Speech recognition error:', event.error);
-      if (event.error === 'no-speech' || event.error === 'aborted') return;
+      if (recognition !== currentRecognition || restartBlocked || !active) return;
+      console.warn('[Sunny] Speech recognition error:', {
+        error: event.error,
+        message: event.message || '(browser did not provide details)',
+        language: currentRecognition.lang,
+        retryAttempts,
+        hasPendingTranscript: Boolean(pendingFinal.trim()),
+      });
+      if (event.error === 'no-speech') return;
+      if (event.error === 'aborted') {
+        retryRecognition(event.error);
+        return;
+      }
       restartBlocked = true;
-      onError(new Error(`Speech recognition failed: ${event.error}`));
+      onError(
+        new Error(
+          `Speech recognition failed: ${event.error}${event.message ? ` (${event.message})` : ''}`,
+        ),
+      );
     };
     currentRecognition.onend = () => {
       if (recognition !== currentRecognition) return;
@@ -113,9 +177,8 @@
       currentRecognition.start();
       console.log('[Sunny] Speech recognition started');
     } catch (error) {
-      recognition = undefined;
-      restartBlocked = true;
-      onError(error);
+      console.error('[Sunny] Speech recognition could not start:', error);
+      retryRecognition(error instanceof Error ? error.message : 'startup error');
     }
   }
 

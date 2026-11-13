@@ -20,7 +20,9 @@ export function normalizeForDisplay(text: string) {
 }
 
 export function normalizeForSpeech(text: string) {
-  return normalizeForDisplay(text).replace(allCapsWord, (word) => `${[...word].join('. ')}.`);
+  return normalizeForDisplay(text)
+    .replace(/\bAI\b/gi, 'a eye')
+    .replace(allCapsWord, (word) => `${[...word].join('. ')}.`);
 }
 
 const bulletStart = /^(?:[-*+]|\d+[.)])\s+/;

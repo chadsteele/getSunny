@@ -8,6 +8,8 @@ The first entry in [`prompts.ts`](./src/lib/prompts.ts) is the spoken opening; t
 
 Use **Show logger** in the menu to view the most recent 200 application log entries on the device; **Show chat** returns to the conversation. Logs are kept in memory only and may include conversation text and error details.
 
+If browser speech recognition aborts unexpectedly, Sunny retries up to three times and shows a reconnecting indicator. If retries fail, check microphone permissions and tap the microphone to try again; the logger includes any details supplied by the browser.
+
 Piper audio is generated directly in the browser for each sentence. The Piper runtime and WASM assets are served locally.
 The voice model is downloaded on first use and cached in the browser's IndexedDB for later visits. On subsequent
 visits, Sunny checks for voice updates in the background; a downloaded update is used on the next visit. The browser

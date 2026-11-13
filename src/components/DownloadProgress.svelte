@@ -30,7 +30,7 @@
   <div
     class="download-progress"
     role="progressbar"
-    aria-label={`${title} download progress`}
+    aria-label={title}
     aria-valuemin="0"
     aria-valuemax="100"
     aria-valuenow={indeterminate ? undefined : progress}
