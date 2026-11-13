@@ -121,6 +121,7 @@
     background: #090704;
     font: inherit;
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
     box-shadow:
       inset 0 0 10px #6f4512,
       0 0 12px #6b3f12;

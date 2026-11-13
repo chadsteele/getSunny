@@ -141,6 +141,14 @@
 {/if}
 
 <style>
+  button,
+  .menu-drawer a {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .menu-drawer a {
+    user-select: none;
+    -webkit-user-select: none;
+  }
   .topbar {
     position: sticky;
     top: 0;
