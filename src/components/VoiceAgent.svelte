@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import ChatThread from './ChatThread.svelte';
   import Footer from './Footer.svelte';
+  import LogViewer from './LogViewer.svelte';
   import PiperTTS from './PiperTTS.svelte';
   import SpeechToText from './SpeechToText.svelte';
   import Sparkle from './Sparkle.svelte';
@@ -11,6 +12,7 @@
   import { logger as console } from '../lib/logger';
   import type { VoiceDownloadProgress } from '../lib/piper-voice-cache';
 
+  let { showingLogs }: { showingLogs: boolean } = $props();
   type Status = 'loading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
   const chatThread = createChatThreadStore();
   const voiceCapabilityInstruction =
@@ -392,17 +394,21 @@
       onInterimTranscript={(transcript) => (liveTranscript = transcript)}
       onError={handleSpeechError}
     />
-    <Sparkle {intensity} />
-    <ChatThread
-      messages={chatThread.messages}
-      {liveTranscript}
-      {speakingSentence}
-      {reviewMessageId}
-      onUserMessageClick={selectUserMessage}
-      onAssistantMessageClick={replayAssistantMessage}
-      onDeleteReview={deleteReviewedMessage}
-      onContinueReview={acceptReviewedMessage}
-    />
+    {#if showingLogs}
+      <LogViewer />
+    {:else}
+      <Sparkle {intensity} />
+      <ChatThread
+        messages={chatThread.messages}
+        {liveTranscript}
+        {speakingSentence}
+        {reviewMessageId}
+        onUserMessageClick={selectUserMessage}
+        onAssistantMessageClick={replayAssistantMessage}
+        onDeleteReview={deleteReviewedMessage}
+        onContinueReview={acceptReviewedMessage}
+      />
+    {/if}
   </div>
   <Footer
     downloadingModel={voiceDownload ? 'Downloading Sunny’s voice...' : 'Sunny is thinking...'}

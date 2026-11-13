@@ -2,6 +2,12 @@
   import { fade, fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
 
+  interface Props {
+    showingLogs: boolean;
+    onToggleView: () => void;
+  }
+
+  let { showingLogs, onToggleView }: Props = $props();
   let menuOpen = $state(false);
   let deleteConfirmOpen = $state(false);
   let menuButton: HTMLButtonElement;
@@ -96,6 +102,19 @@
         </svg>
         Settings
       </a>
+      <button
+        type="button"
+        class="menu-action"
+        onclick={() => {
+          onToggleView();
+          closeMenu();
+        }}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 5h16v14H4zM7 9h10M7 12h10M7 15h7" />
+        </svg>
+        {showingLogs ? 'Show chat' : 'Show logger'}
+      </button>
       <button type="button" class="menu-action" onclick={restoreChatHistory}>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path

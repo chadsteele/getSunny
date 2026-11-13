@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { logger as console } from '../lib/logger';
+
   interface Props {
     active: boolean;
     silenceTimeoutMs: number;
@@ -93,6 +95,7 @@
       if (finalized.trim() || interim.trim()) scheduleTranscript();
     };
     currentRecognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
+      console.warn('[Sunny] Speech recognition error:', event.error);
       if (event.error === 'no-speech' || event.error === 'aborted') return;
       restartBlocked = true;
       onError(new Error(`Speech recognition failed: ${event.error}`));
@@ -100,11 +103,15 @@
     currentRecognition.onend = () => {
       if (recognition !== currentRecognition) return;
       recognition = undefined;
-      if (active && !restartBlocked) startRecognition();
+      if (active && !restartBlocked) {
+        console.log('[Sunny] Speech recognition ended; restarting');
+        startRecognition();
+      }
     };
 
     try {
       currentRecognition.start();
+      console.log('[Sunny] Speech recognition started');
     } catch (error) {
       recognition = undefined;
       restartBlocked = true;

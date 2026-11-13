@@ -3,6 +3,8 @@
   import Header from '../components/Header.svelte';
   import VoiceAgent from '../components/VoiceAgent.svelte';
   import '../styles.css';
+
+  let showingLogs = $state(false);
 </script>
 
 <svelte:head>
@@ -13,6 +15,6 @@
 </svelte:head>
 
 <Layout>
-  <Header />
-  <VoiceAgent />
+  <Header {showingLogs} onToggleView={() => (showingLogs = !showingLogs)} />
+  <VoiceAgent {showingLogs} />
 </Layout>

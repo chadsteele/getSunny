@@ -26,10 +26,32 @@ export function normalizeForSpeech(text: string) {
 const bulletStart = /^(?:[-*+]|\d+[.)])\s+/;
 const nextBullet = /\n\s*(?:[-*+]|\d+[.)])\s+/;
 const sentenceEnd = /[.!?](?:\s|$)/;
+const paragraphEnd = /\r?\n[^\S\r\n]*\r?\n/;
 
 export function splitSentences(text: string) {
   const sentences: string[] = [];
-  let remaining = text.trim();
+  let remaining = text.trimStart();
+  let paragraph = remaining.match(paragraphEnd);
+  while (paragraph && paragraph.index !== undefined) {
+    const bullet = remaining.match(bulletStart);
+    if (bullet && paragraph.index < bullet[0].length) {
+      remaining = remaining.slice(bullet[0].length);
+      paragraph = remaining.match(paragraphEnd);
+      continue;
+    }
+    const split = splitSentenceFragment(remaining.slice(0, paragraph.index));
+    sentences.push(...split.sentences);
+    if (split.remaining.trim()) sentences.push(split.remaining.trim());
+    remaining = remaining.slice(paragraph.index + paragraph[0].length).trimStart();
+    paragraph = remaining.match(paragraphEnd);
+  }
+  const split = splitSentenceFragment(remaining);
+  return { sentences: [...sentences, ...split.sentences], remaining: split.remaining };
+}
+
+function splitSentenceFragment(text: string) {
+  const sentences: string[] = [];
+  let remaining = text.trimStart();
 
   while (remaining) {
     const bullet = remaining.match(bulletStart);
@@ -38,7 +60,7 @@ export function splitSentences(text: string) {
       const next = remaining.slice(contentStart).search(nextBullet);
       if (next >= 0) {
         sentences.push(remaining.slice(contentStart, contentStart + next).trim());
-        remaining = remaining.slice(contentStart + next).trim();
+        remaining = remaining.slice(contentStart + next).trimStart();
       } else {
         sentences.push(remaining.slice(contentStart).trim());
         remaining = '';
@@ -49,7 +71,7 @@ export function splitSentences(text: string) {
     const bulletIndex = remaining.search(nextBullet);
     if (bulletIndex > 0) {
       sentences.push(remaining.slice(0, bulletIndex).trim());
-      remaining = remaining.slice(bulletIndex).trim();
+      remaining = remaining.slice(bulletIndex).trimStart();
       continue;
     }
 
@@ -60,7 +82,7 @@ export function splitSentences(text: string) {
         const boundary = remaining.slice(0, 201).match(/^([\s\S]{1,200})\s/);
         if (boundary) {
           sentences.push(boundary[1].trim());
-          remaining = remaining.slice(boundary[0].length).trim();
+          remaining = remaining.slice(boundary[0].length).trimStart();
         } else {
           const nextSpace = remaining.search(/\s/);
           if (nextSpace < 0) {
@@ -68,14 +90,14 @@ export function splitSentences(text: string) {
             remaining = '';
           } else {
             sentences.push(remaining.slice(0, nextSpace));
-            remaining = remaining.slice(nextSpace).trim();
+            remaining = remaining.slice(nextSpace).trimStart();
           }
         }
       } else {
         const sentence = match[1].trim();
         if (!/\s/.test(sentence)) break;
         sentences.push(sentence);
-        remaining = remaining.slice(match[0].length).trim();
+        remaining = remaining.slice(match[0].length).trimStart();
       }
     }
     break;
