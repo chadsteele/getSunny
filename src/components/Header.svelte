@@ -117,7 +117,7 @@
 
 {#if deleteConfirmOpen}
   <div class="modal-backdrop" role="presentation">
-    <section
+    <div
       class="confirm-modal"
       role="dialog"
       aria-modal="true"
@@ -136,7 +136,7 @@
           Delete history
         </button>
       </div>
-    </section>
+    </div>
   </div>
 {/if}
 
@@ -169,6 +169,23 @@
     border-radius: 2px;
     background: #eab44d;
     box-shadow: 0 0 8px #d8922f;
+    transition:
+      transform 260ms cubic-bezier(0.215, 0.61, 0.355, 1),
+      opacity 260ms ease;
+  }
+  .menu-button[aria-expanded='true'] span:first-child {
+    transform: translateY(9px) rotate(45deg);
+  }
+  .menu-button[aria-expanded='true'] span:nth-child(2) {
+    opacity: 0;
+  }
+  .menu-button[aria-expanded='true'] span:last-child {
+    transform: translateY(-9px) rotate(-45deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .menu-button span {
+      transition: none;
+    }
   }
   .brand {
     position: absolute;
