@@ -26,6 +26,10 @@
     onContinueReview,
   }: Props = $props();
   let chatThread: HTMLDivElement | undefined;
+  const visibleMessages = $derived.by(() => {
+    const chatMessages = messages.filter((message) => message.role !== 'status');
+    return chatMessages.slice(-5);
+  });
 
   function renderMarkdown(content: string) {
     return DOMPurify.sanitize(marked.parse(content, { async: false, breaks: true }));
@@ -134,7 +138,7 @@
 </script>
 
 <div class="chat-thread" bind:this={chatThread} aria-live="polite" aria-label="Conversation">
-  {#each messages.filter((message) => message.role !== 'status') as message (message.id)}
+  {#each visibleMessages as message (message.id)}
     <div class:chat-user={message.role === 'user'} class="chat-row">
       {#if message.role === 'user' && onUserMessageClick}
         <button
