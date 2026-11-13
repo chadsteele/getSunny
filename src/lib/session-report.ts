@@ -23,6 +23,13 @@ export interface SessionReport {
   comments: string | null;
 }
 
+export function reportTimestamps(messages: readonly ChatMessage[]) {
+  return {
+    firstTimestamp: messages[0]?.timestamp ?? null,
+    lastTimestamp: messages.at(-1)?.timestamp ?? null,
+  };
+}
+
 export function parseSessionReport(text: string): SessionReport {
   let value: unknown;
   try {
@@ -59,3 +66,4 @@ export function parseSessionReport(text: string): SessionReport {
     comments: value.comments,
   };
 }
+import type { ChatMessage } from './chat-thread-store.svelte';

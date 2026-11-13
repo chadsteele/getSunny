@@ -1,7 +1,7 @@
 import { logger as console } from './logger';
 
 export type ChatRole = 'user' | 'assistant' | 'status';
-export type ChatMessage = { id: number; role: ChatRole; content: string };
+export type ChatMessage = { id: number; role: ChatRole; content: string; timestamp?: string };
 
 const DEFAULT_STORAGE_KEY = 'sunny-chat-thread';
 
@@ -33,7 +33,14 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     try {
       const stored = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as unknown;
       if (!Array.isArray(stored)) return;
-      messages = stored.filter(isChatMessage);
+      messages = stored.filter(isChatMessage).map((message) => {
+        if (message.timestamp === undefined) return message;
+        if (typeof message.timestamp === 'string' && !Number.isNaN(Date.parse(message.timestamp))) {
+          return message;
+        }
+        console.warn('[Sunny] Invalid chat message timestamp:', { messageId: message.id });
+        return { ...message, timestamp: undefined };
+      });
       nextMessageId = messages.reduce(
         (highestId, message) => Math.max(highestId, message.id + 1),
         0,
@@ -50,7 +57,7 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     const message = content.trim();
     if (!message && role !== 'assistant') return;
     const id = nextMessageId++;
-    messages.push({ id, role, content: message });
+    messages.push({ id, role, content: message, timestamp: new Date().toISOString() });
     persist();
     return id;
   }

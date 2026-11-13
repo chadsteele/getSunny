@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseSessionReport } from '../src/lib/session-report.ts';
+import { parseSessionReport, reportTimestamps } from '../src/lib/session-report.ts';
 
 test('accepts reports with the required fields and nullable values', () => {
   const report = { name: null, summary: '', rank: null, comments: null };
@@ -31,4 +31,27 @@ test('rejects invalid JSON and reports with incorrect fields or values', () => {
     '{"name":null,"summary":"","rank":null,"comments":[]}',
   ];
   for (const text of invalid) assert.throws(() => parseSessionReport(text));
+});
+
+test('reports the timestamps of the first and last messages without inventing missing dates', () => {
+  const first = { id: 1, role: 'user', content: 'first', timestamp: '2024-01-01T00:00:00.000Z' };
+  const last = { id: 2, role: 'assistant', content: 'last', timestamp: '2024-01-02T00:00:00.000Z' };
+  const old = { id: 3, role: 'user', content: 'old' };
+  assert.deepEqual(reportTimestamps([first, last]), {
+    firstTimestamp: first.timestamp,
+    lastTimestamp: last.timestamp,
+  });
+  assert.deepEqual(reportTimestamps([old, last]), {
+    firstTimestamp: null,
+    lastTimestamp: last.timestamp,
+  });
+  assert.deepEqual(reportTimestamps([first, old]), {
+    firstTimestamp: first.timestamp,
+    lastTimestamp: null,
+  });
+  assert.deepEqual(reportTimestamps([first]), {
+    firstTimestamp: first.timestamp,
+    lastTimestamp: first.timestamp,
+  });
+  assert.deepEqual(reportTimestamps([]), { firstTimestamp: null, lastTimestamp: null });
 });

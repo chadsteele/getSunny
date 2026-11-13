@@ -9,7 +9,7 @@
   import { createChatThreadStore } from '../lib/chat-thread-store.svelte';
   import prompts from '../lib/prompts';
   import { splitSentences } from '../lib/speech-text';
-  import { parseSessionReport, reportSystemPrompt } from '../lib/session-report';
+  import { parseSessionReport, reportSystemPrompt, reportTimestamps } from '../lib/session-report';
   import { logger as console } from '../lib/logger';
 
   let { showingLogs }: { showingLogs: boolean } = $props();
@@ -126,13 +126,15 @@
     microphoneAnimationFrame = requestAnimationFrame(updateMicrophoneIntensity);
   }
 
-  function history() {
-    return chatThread.messages
-      .filter(({ role, content }) => role !== 'status' && content.trim())
-      .map(({ role, content }) => ({
-        role: role === 'user' ? 'user' : 'model',
-        parts: [{ text: content }],
-      }));
+  function conversationMessages() {
+    return chatThread.messages.filter(({ role, content }) => role !== 'status' && content.trim());
+  }
+
+  function history(messages = conversationMessages()) {
+    return messages.map(({ role, content }) => ({
+      role: role === 'user' ? 'user' : 'model',
+      parts: [{ text: content }],
+    }));
   }
 
   export async function generateReport() {
@@ -143,19 +145,21 @@
     reportInProgress = true;
     console.log('[Sunny] Generating session report...');
     try {
+      const messages = conversationMessages();
+      const timestamps = reportTimestamps(messages);
       const response = await fetch(endpoint('chat-stream'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           systemPrompt: reportSystemPrompt,
-          history: history(),
+          history: history(messages),
           prompt: 'Produce the session report as JSON.',
         }),
       });
       if (!response.ok) {
         throw new Error(`Report request failed (${response.status}): ${await response.text()}`);
       }
-      const report = parseSessionReport(await response.text());
+      const report = { ...parseSessionReport(await response.text()), ...timestamps };
       console.log('[Sunny] Session report:\n' + JSON.stringify(report, null, 2));
     } catch (error) {
       console.error('[Sunny] Session report failed:', error);

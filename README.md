@@ -8,9 +8,11 @@ Speech audio is prefetched two sentences ahead and played in order. The current 
 
 The first entry in [`prompts.ts`](./src/lib/prompts.ts) is the spoken opening; the second is the conversation system prompt sent with Venice requests.
 
+New chat messages retain their creation timestamp in saved history without displaying it in the chat. Older saved messages do not have recoverable timestamps.
+
 Use **Show logger** in the menu to view the most recent 200 application log entries on the device; **Show chat** returns to the conversation. Logs are kept in memory only and may include conversation text and error details.
 
-Use **Report** in the menu to request a JSON session report from Venice and display it in the logger without speech. The report uses the conversation history available at the time of the request, and can contain sensitive conversation details. Its required fields and rating are validated before logging; errors appear in the logger.
+Use **Report** in the menu to request a JSON session report from Venice and display it in the logger without speech. The report uses the conversation history available at the time of the request, and can contain sensitive conversation details. The `firstTimestamp` and `lastTimestamp` fields are the stored UTC timestamps of the first and last messages in that history; they are `null` when unavailable. Its generated fields and rating are validated before logging; errors appear in the logger.
 
 Speech is sent after the microphone level falls below the speech threshold for the interval set by `speechSilenceTimeoutMs` in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Recordings are limited to 60 seconds. Transcription is returned after recording, not displayed live. Audio and conversation text are sent to the configured providers, so an internet connection and working provider credentials are required.
 
