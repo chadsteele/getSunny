@@ -390,13 +390,17 @@
     const response = await fetch('/api/prompt/', { cache: 'no-store' });
     if (!response.ok) throw new Error(`Prompt request failed: ${response.status}`);
     const payload = (await response.json()) as { prompts?: unknown };
-    const prompts = Array.isArray(payload.prompts)
-      ? payload.prompts.filter((prompt): prompt is string => typeof prompt === 'string')
-      : [];
-    if (!prompts.length) throw new Error('No conversation prompt is configured.');
-    const basePrompt = prompts[0];
-    const opening = extractOpening(basePrompt);
-    systemPrompt = `${basePrompt}\n\n${voiceCapabilityInstruction}`;
+    if (!Array.isArray(payload.prompts))
+      throw new Error('Conversation prompts are not configured.');
+    const [openingPrompt, conversationPrompt] = payload.prompts;
+    if (typeof openingPrompt !== 'string' || !openingPrompt.trim()) {
+      throw new Error('The session opening prompt is not configured.');
+    }
+    if (typeof conversationPrompt !== 'string' || !conversationPrompt.trim()) {
+      throw new Error('The conversation system prompt is not configured.');
+    }
+    const opening = extractOpening(openingPrompt);
+    systemPrompt = `${conversationPrompt}\n\n${voiceCapabilityInstruction}`;
     if (opening) {
       await piperTts.speak(opening, () => chatThread.add('assistant', opening));
     }

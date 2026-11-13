@@ -4,6 +4,8 @@ A mobile-first voice conversation experience. The central sparkle responds to mi
 
 The app uses a browser-local voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Speech is transcribed by the browser's built-in Web Speech API, responses stream from Venice `zai-org-glm-5-2`, and sentence audio is synthesized locally with Piper using the `en_US-libritts_r-medium` voice. Chrome and Edge provide the most consistent browser speech-recognition support. [`Sparkle.svelte`](./src/components/Sparkle.svelte) renders the audio-reactive visual, while [`Footer.svelte`](./src/components/Footer.svelte) provides microphone and speaker controls.
 
+The first entry in [`prompts.ts`](./src/routes/api/prompt/prompts.ts) is the spoken opening; the second is the conversation system prompt sent with Venice requests.
+
 Piper audio is generated directly in the browser for each sentence. The Piper runtime and WASM assets are served locally.
 The voice model is downloaded on first use and cached in the browser's IndexedDB for later visits. On subsequent
 visits, Sunny checks for voice updates in the background; a downloaded update is used on the next visit. The browser
