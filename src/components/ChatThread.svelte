@@ -53,7 +53,7 @@
     const source = textNodes.map((node) => node.data).join('');
     const target = highlight.trim().replace(/\s+/g, ' ');
     const collapsedSource = source.replace(/\s+/g, ' ');
-    const index = collapsedSource.toLocaleLowerCase().indexOf(target.toLocaleLowerCase());
+    const index = collapsedSource.toLocaleLowerCase().lastIndexOf(target.toLocaleLowerCase());
     if (index < 0) return DOMPurify.sanitize(document.body.innerHTML);
 
     const sourcePositions: number[] = [];
@@ -92,6 +92,30 @@
     return DOMPurify.sanitize(document.body.innerHTML);
   }
 
+  function containsHighlight(content: string, highlight: string) {
+    const target = highlight.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+    if (!target) return false;
+    if (typeof DOMParser === 'undefined') {
+      return content.replace(/\s+/g, ' ').toLocaleLowerCase().includes(target);
+    }
+    const document = new DOMParser().parseFromString(renderMarkdown(content), 'text/html');
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const text: string[] = [];
+    while (walker.nextNode()) text.push(walker.currentNode.textContent ?? '');
+    return text.join('').replace(/\s+/g, ' ').toLocaleLowerCase().includes(target);
+  }
+
+  const highlightedMessageId = $derived.by(() => {
+    if (!speakingSentence.trim()) return undefined;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === 'assistant' && containsHighlight(message.content, speakingSentence)) {
+        return message.id;
+      }
+    }
+    return undefined;
+  });
+
   $effect(() => {
     const messageCount = messages.length;
     const activeSentence = speakingSentence;
@@ -101,8 +125,8 @@
     );
     if (activeSentence) {
       void tick().then(() =>
-        chatThread
-          ?.querySelector('.speaking-sentence')
+        [...(chatThread?.querySelectorAll('.speaking-sentence') ?? [])]
+          .at(-1)
           ?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
       );
     }
@@ -129,7 +153,10 @@
           onclick={(event) => replayAssistantMessage(event, message.content)}
           onkeydown={(event) => replayAssistantMessageFromKeyboard(event, message.content)}
         >
-          {@html renderMessage(message.content, speakingSentence)}
+          {@html renderMessage(
+            message.content,
+            message.id === highlightedMessageId ? speakingSentence : '',
+          )}
         </div>
       {/if}
       {#if reviewMessageId === message.id}
