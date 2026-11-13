@@ -3,14 +3,13 @@
   import ChatThread from './ChatThread.svelte';
   import Footer from './Footer.svelte';
   import LogViewer from './LogViewer.svelte';
-  import PiperTTS from './PiperTTS.svelte';
+  import RemoteTTS from './RemoteTTS.svelte';
   import SpeechToText from './SpeechToText.svelte';
   import Sparkle from './Sparkle.svelte';
   import { createChatThreadStore } from '../lib/chat-thread-store.svelte';
   import prompts from '../lib/prompts';
   import { splitSentences } from '../lib/speech-text';
   import { logger as console } from '../lib/logger';
-  import type { VoiceDownloadProgress } from '../lib/piper-voice-cache';
 
   let { showingLogs }: { showingLogs: boolean } = $props();
   type Status = 'loading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
@@ -27,8 +26,12 @@
   let conversationActive = $state(false);
   let intensity = $state(0.18);
   let reviewMessageId = $state<number | undefined>();
-  let piperTts: PiperTTS;
-  let mediaStream: MediaStream | undefined;
+  let remoteTts: RemoteTTS;
+  let speechToText: SpeechToText;
+  let mediaStream = $state<MediaStream | undefined>();
+  let microphoneVersion = 0;
+  let conversationVersion = 0;
+  let transcriptionAbort: AbortController | undefined;
   let sunnySpeaking = $state(false);
   let responseInProgress = $state(false);
   let microphoneContext: AudioContext | undefined;
@@ -38,9 +41,6 @@
   let microphoneMuted = $state(true);
   let speakerMuted = $state(false);
   let waitingProgress = $state(0);
-  let voiceDownload = $state<VoiceDownloadProgress | null>(null);
-  let speechRetry = $state<{ attempt: number; maxAttempts: number } | null>(null);
-  let speechDiagnostic = false;
   let waitingRemainingMs = $state(60_000);
   let waitingTimer: ReturnType<typeof setInterval> | undefined;
   let waitingStartedAt = 0;
@@ -118,6 +118,7 @@
       sum += amplitude * amplitude;
     }
     const level = Math.sqrt(sum / microphoneData.length);
+    speechToText?.observe(level);
     intensity = Math.min(0.9, Math.max(0.18, level * 4));
     microphoneAnimationFrame = requestAnimationFrame(updateMicrophoneIntensity);
   }
@@ -168,24 +169,47 @@
       sentenceBuffer += chunk;
       chatThread.update(assistantId, fullText);
       const split = splitSentences(sentenceBuffer);
-      split.sentences.forEach((sentence) => void piperTts.speak(sentence));
+      split.sentences.forEach((sentence) => void remoteTts.speak(sentence));
       sentenceBuffer = split.remaining;
     }
     const finalText = fullText.trim();
     chatThread.update(assistantId, finalText);
-    await piperTts.speak(sentenceBuffer);
+    await remoteTts.speak(sentenceBuffer);
     console.log('[Sunny] LLM SaaS response complete');
   }
 
-  async function processTranscript(text: string) {
+  async function processRecording(audio: Blob) {
     if (responseInProgress) return;
+    const version = conversationVersion;
     responseInProgress = true;
     stopListening();
     liveTranscript = '';
     status = 'thinking';
     startWaitingProgress();
+    const controller = new AbortController();
+    transcriptionAbort = controller;
     try {
-      const transcript = text.trim();
+      const response = await fetch(endpoint('transcribe'), {
+        method: 'POST',
+        headers: { 'content-type': audio.type || 'audio/webm' },
+        body: audio,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Transcription failed (${response.status}): ${await response.text()}`);
+      }
+      const result: unknown = await response.json();
+      if (
+        !result ||
+        typeof result !== 'object' ||
+        !('text' in result) ||
+        typeof result.text !== 'string'
+      ) {
+        throw new Error('Invalid transcription response.');
+      }
+      const transcript = result.text.trim();
+      if (version !== conversationVersion || !conversationActive || microphoneMuted) return;
+      transcriptionAbort = undefined;
       if (!transcript) {
         reportStatus('I could not hear that. Please try again.');
         return;
@@ -194,90 +218,85 @@
       chatThread.add('user', transcript);
       await streamResponse(transcript, conversationHistory);
     } catch (error) {
+      if (version !== conversationVersion) return;
       console.error('[Sunny] Remote voice pipeline failed:', error);
+      stopConversation();
+      microphoneMuted = true;
       reportStatus(error instanceof Error ? error.message : 'Voice request failed.', 'error');
     } finally {
+      if (transcriptionAbort === controller) transcriptionAbort = undefined;
       responseInProgress = false;
       stopWaitingProgress();
       if (conversationActive) {
         status = 'listening';
-        startListening();
+        void startListening();
       }
     }
   }
 
   function stopListening() {
-    mediaStream?.getAudioTracks().forEach((track) => (track.enabled = false));
+    microphoneVersion += 1;
+    mediaStream?.getTracks().forEach((track) => track.stop());
+    mediaStream = undefined;
     stopMicrophoneVisualizer();
   }
 
-  function startListening() {
-    if (
-      microphoneMuted ||
-      !conversationActive ||
-      responseInProgress ||
-      sunnySpeaking ||
-      !mediaStream
-    )
-      return;
-    mediaStream.getAudioTracks().forEach((track) => (track.enabled = true));
-    startMicrophoneVisualizer();
+  async function startListening() {
+    if (microphoneMuted || !conversationActive || responseInProgress || sunnySpeaking) return;
+    if (mediaStream) return;
+    const version = ++microphoneVersion;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      if (
+        version !== microphoneVersion ||
+        microphoneMuted ||
+        !conversationActive ||
+        responseInProgress ||
+        sunnySpeaking
+      ) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      mediaStream = stream;
+      startMicrophoneVisualizer();
+    } catch (error) {
+      if (version === microphoneVersion) handleSpeechError(error);
+    }
   }
 
-  function handleTranscript(transcript: string) {
+  function handleRecording(audio: Blob) {
     reportStatus('', 'thinking');
-    void processTranscript(transcript);
+    void processRecording(audio);
   }
 
   function handleSpeechError(error: unknown) {
-    speechRetry = null;
     stopConversation();
     microphoneMuted = true;
     reportStatus(error instanceof Error ? error.message : 'Speech recognition failed.', 'error');
   }
 
-  function handleSpeechRetry(attempt: number, maxAttempts: number) {
-    speechRetry = { attempt, maxAttempts };
-    reportStatus(`Reconnecting speech recognition (${attempt}/${maxAttempts})...`);
-  }
-
-  function handleSpeechReady() {
-    if (!speechRetry && !speechDiagnostic) return;
-    speechRetry = null;
-    speechDiagnostic = false;
-    reportStatus('Listening');
-  }
-
-  function handleSpeechDiagnostic(message: string) {
-    speechDiagnostic = true;
-    reportStatus(message);
-  }
-
   async function startConversation() {
     if (conversationActive) return;
-    mediaStream ??= await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
-    mediaStream.getAudioTracks().forEach((track) => (track.enabled = !microphoneMuted));
     conversationActive = true;
     status = 'listening';
     intensity = 0.45;
-    startMicrophoneVisualizer();
+    await startListening();
   }
 
   function stopConversation() {
+    conversationVersion += 1;
+    transcriptionAbort?.abort();
+    transcriptionAbort = undefined;
     conversationActive = false;
-    speechRetry = null;
-    speechDiagnostic = false;
     stopListening();
     stopWaitingProgress();
-    mediaStream?.getTracks().forEach((track) => track.stop());
-    mediaStream = undefined;
     stopMicrophoneVisualizer();
     status = 'paused';
   }
@@ -299,7 +318,7 @@
   function toggleSpeaker() {
     speakerMuted = !speakerMuted;
     if (speakerMuted) {
-      piperTts.stop();
+      remoteTts.stop();
     }
   }
 
@@ -319,36 +338,37 @@
 
   function replayAssistantMessage(message: string) {
     if (speakerMuted) return;
-    piperTts.stop();
-    void piperTts.speak(message);
+    remoteTts.stop();
+    void remoteTts.speak(message);
   }
 
-  function handlePiperSentence(sentence: string) {
+  function handleSpeakingSentence(sentence: string) {
     sunnySpeaking = true;
-    speechRetry = null;
     stopListening();
     speakingSentence = sentence;
     status = 'speaking';
   }
 
-  function handlePiperEnd() {
+  function handleSpeakingEnd() {
     sunnySpeaking = false;
     speakingSentence = '';
     if (conversationActive && !responseInProgress && !microphoneMuted) {
       status = 'listening';
-      startListening();
+      void startListening();
     }
   }
 
-  function handlePiperIntensity(nextIntensity: number) {
+  function handleSpeakingIntensity(nextIntensity: number) {
     intensity = nextIntensity;
   }
 
-  function handlePiperError(error: unknown) {
+  function handleSpeakingError(error: unknown) {
     stopConversation();
     microphoneMuted = true;
     reportStatus(
-      error instanceof Error ? `Piper TTS failed: ${error.message}` : 'Piper TTS failed.',
+      error instanceof Error
+        ? `Speech synthesis failed: ${error.message}`
+        : 'Speech synthesis failed.',
       'error',
     );
   }
@@ -364,7 +384,7 @@
     const opening = extractOpening(openingPrompt);
     systemPrompt = `${conversationPrompt}\n\n${voiceCapabilityInstruction}`;
     if (opening) {
-      await piperTts.speak(opening, () => chatThread.add('assistant', opening));
+      await remoteTts.speak(opening, () => chatThread.add('assistant', opening));
     }
   }
 
@@ -382,6 +402,12 @@
     void loadPrompt()
       .then(() => {
         if (status === 'error') return;
+        if (conversationActive && !microphoneMuted) {
+          status = 'listening';
+          reportStatus('Listening');
+          void startListening();
+          return;
+        }
         status = 'paused';
         reportStatus('Ready — press mic to talk', 'paused');
       })
@@ -398,27 +424,24 @@
 
 <main class="session-main">
   <div class="session-stage">
-    <PiperTTS
-      bind:this={piperTts}
+    <RemoteTTS
+      bind:this={remoteTts}
       muted={speakerMuted}
-      onSpeakingSentence={handlePiperSentence}
-      onSpeakingEnd={handlePiperEnd}
-      onIntensityChange={handlePiperIntensity}
-      onDownloadProgress={(progress) => (voiceDownload = progress)}
-      onError={handlePiperError}
+      onSpeakingSentence={handleSpeakingSentence}
+      onSpeakingEnd={handleSpeakingEnd}
+      onIntensityChange={handleSpeakingIntensity}
+      onError={handleSpeakingError}
     />
     <SpeechToText
+      bind:this={speechToText}
       active={conversationActive &&
         !microphoneMuted &&
         !responseInProgress &&
         !sunnySpeaking &&
         status === 'listening'}
       silenceTimeoutMs={speechSilenceTimeoutMs}
-      onTranscript={handleTranscript}
-      onInterimTranscript={(transcript) => (liveTranscript = transcript)}
-      onRetry={handleSpeechRetry}
-      onReady={handleSpeechReady}
-      onDiagnostic={handleSpeechDiagnostic}
+      stream={mediaStream}
+      onRecording={handleRecording}
       onError={handleSpeechError}
     />
     {#if showingLogs}
@@ -438,16 +461,12 @@
     {/if}
   </div>
   <Footer
-    downloadingModel={voiceDownload
-      ? 'Downloading Sunny’s voice...'
-      : speechRetry
-        ? `Reconnecting speech recognition (${speechRetry.attempt}/${speechRetry.maxAttempts})...`
-        : 'Sunny is thinking...'}
-    downloadProgress={voiceDownload ? (voiceDownload.percent ?? 0) : waitingProgress}
-    downloadRemainingMs={voiceDownload ? voiceDownload.remainingMs : waitingRemainingMs}
+    downloadingModel="Sunny is thinking..."
+    downloadProgress={waitingProgress}
+    downloadRemainingMs={waitingRemainingMs}
     downloadStatus={statusMessage}
-    indeterminate={voiceDownload ? voiceDownload.percent === null : speechRetry !== null}
-    showProgress={voiceDownload !== null || speechRetry !== null || status === 'thinking'}
+    indeterminate={false}
+    showProgress={status === 'thinking'}
     {microphoneMuted}
     {speakerMuted}
     onToggleMicrophone={toggleMicrophone}

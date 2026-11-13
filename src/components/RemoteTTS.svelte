@@ -2,30 +2,16 @@
   import { onMount } from 'svelte';
   import { normalizeForDisplay, normalizeForSpeech, splitSentences } from '../lib/speech-text';
   import { logger as console } from '../lib/logger';
-  import { CachedPiperVoiceProvider, type VoiceDownloadProgress } from '../lib/piper-voice-cache';
 
   interface Props {
     muted: boolean;
     onSpeakingSentence?: (sentence: string) => void;
     onSpeakingEnd?: () => void;
     onIntensityChange?: (intensity: number) => void;
-    onDownloadProgress?: (progress: VoiceDownloadProgress | null) => void;
     onError?: (error: unknown) => void;
   }
 
-  type PiperEngine = {
-    generate: (text: string, voice: string, speaker?: number) => Promise<{ file: Blob }>;
-    destroy: () => void;
-  };
-
-  let {
-    muted,
-    onSpeakingSentence,
-    onSpeakingEnd,
-    onIntensityChange,
-    onDownloadProgress,
-    onError,
-  }: Props = $props();
+  let { muted, onSpeakingSentence, onSpeakingEnd, onIntensityChange, onError }: Props = $props();
 
   let audio: HTMLAudioElement | undefined;
   let audioUrl: string | undefined;
@@ -34,105 +20,23 @@
   let audioSource: MediaElementAudioSourceNode | undefined;
   let audioData: Uint8Array<ArrayBuffer> | undefined;
   let animationFrame: number | undefined;
-  let engine: PiperEngine | undefined;
-  let enginePromise: Promise<PiperEngine> | undefined;
-  let loadPhonemizer: (() => Promise<unknown>) | undefined;
-  let preloadPromise: Promise<void> | undefined;
   let speechQueue = Promise.resolve();
   let cancelled = false;
   let playbackVersion = 0;
   let pendingPlaybackResolve: (() => void) | undefined;
   let playbackUnlocked = false;
-  const voice = 'en_US-libritts_r-medium';
-
-  function getEngine() {
-    enginePromise ??= import('piper-tts-web')
-      .then(({ PiperWebEngine, PhonemizeWebRuntime }) => {
-        const assetUrls = new Set<string>();
-        const phonemizer = new PhonemizeWebRuntime({
-          provider: {
-            async fetch(url) {
-              async function readAsset(assetUrl: string) {
-                const response = await fetch(assetUrl, { cache: 'no-store' });
-                if (!response.ok) {
-                  throw new Error(`HTTP ${response.status}`);
-                }
-                const blob = await response.blob();
-                if (!blob.size) throw new Error('Empty asset response');
-                return blob;
-              }
-              let blob: Blob;
-              try {
-                blob = await readAsset(url);
-              } catch (error) {
-                console.warn(
-                  `[Sunny] Piper asset ${url} failed; retrying with a fresh URL:`,
-                  error,
-                );
-                const retryUrl = new URL(url, window.location.href);
-                retryUrl.searchParams.set('retry', crypto.randomUUID());
-                try {
-                  blob = await readAsset(retryUrl.href);
-                } catch (retryError) {
-                  throw new Error(`Unable to load Piper asset ${url}`, { cause: retryError });
-                }
-              }
-              const assetUrl = URL.createObjectURL(blob);
-              assetUrls.add(assetUrl);
-              return assetUrl;
-            },
-            destroy() {
-              for (const url of assetUrls) URL.revokeObjectURL(url);
-              assetUrls.clear();
-            },
-          },
-        });
-        loadPhonemizer = () => phonemizer.loadModule();
-        const nextEngine = new PiperWebEngine({
-          phonemizeRuntime: phonemizer,
-          voiceProvider: new CachedPiperVoiceProvider((progress) => onDownloadProgress?.(progress)),
-        });
-        engine = nextEngine;
-        return nextEngine;
-      })
-      .catch((error: unknown) => {
-        enginePromise = undefined;
-        throw error;
-      });
-    return enginePromise;
-  }
-
-  async function preload() {
-    try {
-      await getEngine();
-      console.log('[Sunny] Piper engine ready');
-    } catch (error) {
-      console.error('[Sunny] Piper preload failed:', error);
-      onError?.(error);
-    }
-  }
-
-  function ensurePreload() {
-    preloadPromise ??= preload();
-    return preloadPromise;
-  }
-
-  function generateSpeech(text: string) {
+  async function generateSpeech(text: string) {
     console.log(`[Sunny]  ${text}`);
-    return getEngine()
-      .then(async (nextEngine) => {
-        if (!loadPhonemizer) throw new Error('Piper phonemizer is not initialized.');
-        await loadPhonemizer();
-        return nextEngine.generate(text, voice);
-      })
-      .then(({ file }) => file)
-      .catch((error: unknown) => {
-        engine?.destroy();
-        engine = undefined;
-        enginePromise = undefined;
-        loadPhonemizer = undefined;
-        throw error;
-      });
+    const response = await fetch('/.netlify/functions/tts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Speech synthesis failed (${response.status}): ${body}`);
+    }
+    return response.blob();
   }
 
   function updateIntensity() {
@@ -232,7 +136,7 @@
       }
       await new Promise<void>((resolve, reject) => {
         audio!.onended = () => resolve();
-        audio!.onerror = () => reject(new Error('Piper audio playback failed.'));
+        audio!.onerror = () => reject(new Error('Speech audio playback failed.'));
         audio!.onpause = () => {
           if (cancelled) resolve();
         };
@@ -251,13 +155,12 @@
     speechQueue = speechQueue
       .then(() => {
         if (requestVersion !== playbackVersion) return;
-        return ensurePreload().then(() => {
-          if (requestVersion !== playbackVersion) return;
-          return playSentence(displaySentence, generateSpeech(sentence), requestVersion, onReady);
-        });
+        return playSentence(displaySentence, generateSpeech(sentence), requestVersion, onReady);
       })
       .catch((error: unknown) => {
-        console.error('[Sunny] Piper playback failed:', error);
+        if (requestVersion !== playbackVersion) return;
+        playbackVersion += 1;
+        console.error('[Sunny] Speech playback failed:', error);
         onError?.(error);
       });
   }
@@ -287,7 +190,6 @@
   }
 
   onMount(() => {
-    void ensurePreload();
     document.addEventListener('pointerdown', unlockPlayback, { passive: true });
     return () => {
       document.removeEventListener('pointerdown', unlockPlayback);
@@ -295,7 +197,6 @@
       audioSource?.disconnect();
       analyser?.disconnect();
       void audioContext?.close();
-      engine?.destroy();
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   });

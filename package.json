@@ -7,7 +7,7 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "concurrently --kill-others-on-fail \"vite\" \"netlify functions:serve --offline --functions netlify/functions --port 9999\"",
+    "dev": "concurrently --kill-others-on-fail \"vite\" \"node --env-file=.env ./node_modules/netlify-cli/bin/run.js functions:serve --offline --functions netlify/functions --port 9999\"",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
@@ -31,7 +31,6 @@
   "dependencies": {
     "dompurify": "^3.4.17",
     "marked": "^18.2.0",
-    "openai": "^7.55.0",
-    "piper-tts-web": "^1.1.2"
+    "openai": "^7.55.0"
   }
 }
