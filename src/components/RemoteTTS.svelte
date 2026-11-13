@@ -25,18 +25,41 @@
   let playbackVersion = 0;
   let pendingPlaybackResolve: (() => void) | undefined;
   let playbackUnlocked = false;
-  async function generateSpeech(text: string) {
+  type SpeechResult = { blob: Blob } | { error: unknown };
+  type SpeechJob = {
+    sentence: string;
+    controller: AbortController;
+    result?: Promise<SpeechResult>;
+  };
+  let speechJobs: SpeechJob[] = [];
+
+  async function generateSpeech(text: string, signal: AbortSignal) {
     console.log(`[Sunny]  ${text}`);
     const response = await fetch('/.netlify/functions/tts', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text }),
+      signal,
     });
     if (!response.ok) {
       const body = await response.text();
       throw new Error(`Speech synthesis failed (${response.status}): ${body}`);
     }
     return response.blob();
+  }
+
+  function prefetchSpeech() {
+    for (const job of speechJobs.slice(0, 2)) {
+      job.result ??= generateSpeech(job.sentence, job.controller.signal).then(
+        (blob): SpeechResult => ({ blob }),
+        (error: unknown): SpeechResult => ({ error }),
+      );
+    }
+  }
+
+  function cancelSpeechJobs() {
+    for (const job of speechJobs) job.controller.abort();
+    speechJobs = [];
   }
 
   function updateIntensity() {
@@ -96,13 +119,16 @@
 
   async function playSentence(
     text: string,
-    blobPromise: Promise<Blob>,
+    job: SpeechJob,
     requestVersion: number,
     onReady?: () => void,
   ) {
     if (muted || requestVersion !== playbackVersion) return;
-    const blob = await blobPromise;
+    if (!job.result) throw new Error('Speech request was not started.');
+    const result = await job.result;
     if (muted || requestVersion !== playbackVersion) return;
+    if ('error' in result) throw result.error;
+    const { blob } = result;
     cancelled = false;
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     audioUrl = URL.createObjectURL(blob);
@@ -152,14 +178,23 @@
     const sentence = normalizeForSpeech(text);
     if (!displaySentence || !sentence || muted) return;
     const requestVersion = playbackVersion;
+    const job: SpeechJob = { sentence, controller: new AbortController() };
+    speechJobs.push(job);
+    prefetchSpeech();
     speechQueue = speechQueue
       .then(() => {
         if (requestVersion !== playbackVersion) return;
-        return playSentence(displaySentence, generateSpeech(sentence), requestVersion, onReady);
+        return playSentence(displaySentence, job, requestVersion, onReady);
+      })
+      .then(() => {
+        if (requestVersion !== playbackVersion) return;
+        speechJobs.shift();
+        prefetchSpeech();
       })
       .catch((error: unknown) => {
         if (requestVersion !== playbackVersion) return;
         playbackVersion += 1;
+        cancelSpeechJobs();
         console.error('[Sunny] Speech playback failed:', error);
         onError?.(error);
       });
@@ -180,6 +215,7 @@
 
   export function stop() {
     playbackVersion += 1;
+    cancelSpeechJobs();
     cancelled = true;
     speechQueue = Promise.resolve();
     pendingPlaybackResolve?.();
