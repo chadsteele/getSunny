@@ -1,8 +1,8 @@
 # Sunny
 
-A tiny Svelte experience inspired by the supplied mobile reference. The central sparkle responds to live frequency data from either the built-in ambient tone or an audio file selected by the user.
+A mobile-first voice conversation experience. The central sparkle responds to microphone input and Sunny's speech.
 
-The app uses a browser-local voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Speech is transcribed immediately by the browser's built-in Web Speech API, responses stream from Venice `zai-org-glm-5-2`, and sentence audio is synthesized locally with Piper using the `en_US-libritts_r-medium` voice. Chrome and Edge provide the most consistent browser speech-recognition support. The existing [`Sparkle.svelte`](./src/components/Sparkle.svelte) and [`AudioControls.svelte`](./src/components/AudioControls.svelte) components remain the visual sparkle and pause/resume control.
+The app uses a browser-local voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Speech is transcribed by the browser's built-in Web Speech API, responses stream from Venice `zai-org-glm-5-2`, and sentence audio is synthesized locally with Piper using the `en_US-libritts_r-medium` voice. Chrome and Edge provide the most consistent browser speech-recognition support. [`Sparkle.svelte`](./src/components/Sparkle.svelte) renders the audio-reactive visual, while [`Footer.svelte`](./src/components/Footer.svelte) provides microphone and speaker controls.
 
 Piper audio is generated directly in the browser for each sentence. The Piper runtime and WASM assets are served locally.
 The voice model is downloaded on first use and cached in the browser's IndexedDB for later visits. On subsequent
@@ -63,9 +63,9 @@ git push -u origin main
 Import the GitHub repository into Netlify. The included [`netlify.toml`](./netlify.toml) configures:
 
 - Build command: `npm run build`
-- Publish directory: `dist`
+- Publish directory: `.svelte-kit/netlify`
 
-No environment variables are required.
+Configure `VENICE_API_KEY` in Netlify for chat responses.
 
 ## Development requirements
 

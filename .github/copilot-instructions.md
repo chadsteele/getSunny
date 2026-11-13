@@ -7,7 +7,7 @@
 - [VoiceAgent.svelte](../src/components/VoiceAgent.svelte) owns microphone lifecycle, remote requests, sentence buffering, ordered TTS playback, and chat rendering.
 - Keep `VENICE_API_KEY` server-side in Netlify environment variables. Browser STT and local Piper TTS do not require provider API keys.
 - The `/api/prompt` endpoint owns the system prompt and session scripts. Keep the `Session Opening Script` marker synchronized with the parser in `VoiceAgent.svelte`.
-- The browser does not download or run AI models. Do not reintroduce local inference or model assets.
+- Piper runs in the browser; its selected voice model is downloaded and cached in IndexedDB. Do not add additional browser inference systems or model assets.
 
 ## Local Runtime Requirements
 

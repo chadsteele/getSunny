@@ -3,19 +3,10 @@
     title: string;
     progress: number;
     remainingMs: number;
-    status: string;
     indeterminate?: boolean;
-    showStatus?: boolean;
   }
 
-  let {
-    title,
-    progress,
-    remainingMs,
-    status,
-    indeterminate = false,
-    showStatus = true,
-  }: Props = $props();
+  let { title, progress, remainingMs, indeterminate = false }: Props = $props();
 
   function formatDuration(milliseconds: number) {
     if (!Number.isFinite(milliseconds) || milliseconds <= 0) return '';
@@ -46,9 +37,6 @@
   >
     <span class:indeterminate style={`width: ${progress}%`}></span>
   </div>
-  {#if showStatus}
-    <div>{status}</div>
-  {/if}
 </div>
 
 <style>
@@ -64,13 +52,6 @@
     justify-content: space-between;
     gap: 8px;
     margin-bottom: 5px;
-  }
-  .download-status small {
-    display: block;
-    overflow: hidden;
-    color: #8e6e3a;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .download-progress {
     width: 100%;

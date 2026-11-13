@@ -39,7 +39,6 @@
   let loadPhonemizer: (() => Promise<unknown>) | undefined;
   let preloadPromise: Promise<void> | undefined;
   let speechQueue = Promise.resolve();
-  let paused = false;
   let cancelled = false;
   let playbackVersion = 0;
   let pendingPlaybackResolve: (() => void) | undefined;
@@ -197,9 +196,9 @@
     requestVersion: number,
     onReady?: () => void,
   ) {
-    if (muted || paused || requestVersion !== playbackVersion) return;
+    if (muted || requestVersion !== playbackVersion) return;
     const blob = await blobPromise;
-    if (muted || paused || requestVersion !== playbackVersion) return;
+    if (muted || requestVersion !== playbackVersion) return;
     cancelled = false;
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     audioUrl = URL.createObjectURL(blob);
@@ -228,7 +227,7 @@
             pendingPlaybackResolve = resolve;
           });
         }
-        if (muted || paused || requestVersion !== playbackVersion) return;
+        if (muted || requestVersion !== playbackVersion) return;
         await audio.play();
       }
       await new Promise<void>((resolve, reject) => {
@@ -247,7 +246,7 @@
   function queueSentence(text: string, onReady?: () => void) {
     const displaySentence = normalizeForDisplay(text);
     const sentence = normalizeForSpeech(text);
-    if (!displaySentence || !sentence || muted || paused) return;
+    if (!displaySentence || !sentence || muted) return;
     const requestVersion = playbackVersion;
     speechQueue = speechQueue
       .then(() => {
@@ -279,30 +278,12 @@
   export function stop() {
     playbackVersion += 1;
     cancelled = true;
-    paused = false;
     speechQueue = Promise.resolve();
     pendingPlaybackResolve?.();
     pendingPlaybackResolve = undefined;
     audio?.pause();
     onSpeakingEnd?.();
     stopVisualizer();
-  }
-
-  export function pause() {
-    paused = true;
-    audio?.pause();
-    stopVisualizer();
-  }
-
-  export function resume() {
-    if (!paused || muted || !audio?.src) return;
-    paused = false;
-    cancelled = false;
-    void audio.play().catch((error: unknown) => {
-      console.error('[Sunny] Piper resume failed:', error);
-      onError?.(error);
-    });
-    startVisualizer();
   }
 
   onMount(() => {

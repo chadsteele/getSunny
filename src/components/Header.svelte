@@ -187,17 +187,6 @@
     letter-spacing: 0.01em;
     color: #f0bf55;
   }
-  .step strong {
-    font-weight: 500;
-  }
-  .step-dot {
-    display: inline-block;
-    width: 5px;
-    height: 5px;
-    background: #e5a839;
-    border-radius: 50%;
-    margin: 0 0 3px 7px;
-  }
   .drawer-layer {
     grid-row: 2;
     grid-column: 1;

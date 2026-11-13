@@ -74,13 +74,6 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     persist();
   }
 
-  function context() {
-    return messages
-      .filter(({ role }) => role !== 'status')
-      .map(({ role, content }) => `${role === 'user' ? 'User' : 'Sunny'}: ${content}`)
-      .join('\n\n');
-  }
-
   return {
     get messages() {
       return messages;
@@ -90,6 +83,5 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     update,
     clear,
     removeMessagesBefore,
-    context,
   };
 }

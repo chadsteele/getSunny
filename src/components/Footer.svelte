@@ -35,9 +35,7 @@
         title={downloadingModel}
         progress={downloadProgress}
         remainingMs={downloadRemainingMs}
-        status={downloadStatus}
         {indeterminate}
-        showStatus={false}
       />
     </div>
   {/if}
