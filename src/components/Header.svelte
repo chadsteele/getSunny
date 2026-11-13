@@ -1,6 +1,34 @@
 <script lang="ts">
-  let menuOpen = false;
-  let deleteConfirmOpen = false;
+  import { fade, fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
+
+  let menuOpen = $state(false);
+  let deleteConfirmOpen = $state(false);
+  let menuButton: HTMLButtonElement;
+
+  function closeMenu() {
+    menuOpen = false;
+    menuButton?.focus();
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && menuOpen) closeMenu();
+  }
+
+  function drawerTransition(node: Element) {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return fly(node, {
+      x: -node.getBoundingClientRect().width,
+      opacity: 1,
+      duration: reducedMotion ? 0 : 260,
+      easing: cubicOut,
+    });
+  }
+
+  function backdropTransition(node: Element) {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return fade(node, { duration: reducedMotion ? 0 : 260 });
+  }
 
   function requestDeleteChatHistory() {
     deleteConfirmOpen = true;
@@ -19,20 +47,39 @@
   }
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 <header class="topbar">
   <button
+    bind:this={menuButton}
+    type="button"
     class="menu-button"
-    aria-label="Open menu"
+    aria-label={menuOpen ? 'Close menu' : 'Open menu'}
     aria-expanded={menuOpen}
+    aria-controls="session-menu"
     onclick={() => (menuOpen = !menuOpen)}
   >
     <span></span><span></span><span></span>
   </button>
   <div class="brand"><span></span></div>
   <div class="step">Step 1: Dreaming</div>
+</header>
 
+<div class="drawer-layer" class:open={menuOpen} inert={!menuOpen}>
   {#if menuOpen}
-    <nav class="menu-popover" aria-label="Session menu">
+    <button
+      class="drawer-backdrop"
+      type="button"
+      aria-label="Close menu"
+      onclick={closeMenu}
+      transition:backdropTransition
+    ></button>
+    <nav
+      id="session-menu"
+      class="menu-drawer"
+      aria-label="Session menu"
+      transition:drawerTransition
+    >
       <a href="https://mastermoney.ai">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="8" r="3.5" />
@@ -40,7 +87,7 @@
         </svg>
         Sign in
       </a>
-      <a href="#settings">
+      <a href="#settings" onclick={() => (menuOpen = false)}>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path
             d="m9.5 3 .6 2a7.5 7.5 0 0 1 3.8 0l.6-2 2.2.9-.6 2a7.5 7.5 0 0 1 2.7 2.7l2-.6.9 2.2-2 .6a7.5 7.5 0 0 1 0 3.8l2 .6-.9 2.2-2-.6a7.5 7.5 0 0 1-2.7 2.7l.6 2-2.2.9-.6-2a7.5 7.5 0 0 1-3.8 0l-.6 2-2.2-.9.6-2a7.5 7.5 0 0 1-2.7-2.7l-2 .6-.9-2.2 2-.6a7.5 7.5 0 0 1 0-3.8l-2-.6.9-2.2 2 .6a7.5 7.5 0 0 1 2.7-2.7l-.6-2L9.5 3Z"
@@ -66,7 +113,7 @@
       </button>
     </nav>
   {/if}
-</header>
+</div>
 
 {#if deleteConfirmOpen}
   <div class="modal-backdrop" role="presentation">
@@ -151,20 +198,40 @@
     border-radius: 50%;
     margin: 0 0 3px 7px;
   }
-  .menu-popover {
-    position: absolute;
-    top: 76px;
-    left: 29px;
-    z-index: 4;
-    display: grid;
-    gap: 13px;
-    padding: 17px 20px;
-    border: 1px solid #5b3e16;
-    background: #0c0905;
-    border-radius: 12px;
-    box-shadow: 0 15px 40px #000;
+  .drawer-layer {
+    grid-row: 2;
+    grid-column: 1;
+    position: relative;
+    z-index: 10;
+    margin: 0 calc(-1 * var(--frame-gutter)) calc(-1 * var(--frame-bottom));
+    pointer-events: none;
   }
-  .menu-popover a {
+  .drawer-layer.open {
+    pointer-events: auto;
+  }
+  .drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #0009;
+    cursor: pointer;
+  }
+  .menu-drawer {
+    position: relative;
+    width: min(280px, 85%);
+    height: 100%;
+    display: grid;
+    align-content: start;
+    gap: 22px;
+    overflow-y: auto;
+    padding: 25px 24px;
+    border-right: 1px solid #5b3e16;
+    background: #0c0905;
+    box-shadow: 12px 0 30px #0008;
+  }
+  .menu-drawer a {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -186,7 +253,7 @@
     text-align: left;
     cursor: pointer;
   }
-  .menu-popover svg {
+  .menu-drawer svg {
     width: 16px;
     height: 16px;
     flex: 0 0 16px;
@@ -200,7 +267,8 @@
   .menu-action:focus-visible,
   .delete-chat-button:hover,
   .delete-chat-button:focus-visible,
-  .menu-popover a:hover {
+  .menu-drawer a:hover,
+  .menu-drawer a:focus-visible {
     color: #fff0bd;
   }
   .modal-backdrop {

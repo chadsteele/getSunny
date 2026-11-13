@@ -21,15 +21,18 @@
     background: radial-gradient(circle at 50% 46%, #110b02 0, #050403 26%, #020202 58%);
   }
   .phone-content {
+    --frame-gutter: 30px;
+    --frame-bottom: 32px;
     height: 100%;
     min-height: 0;
     min-width: 0;
     overflow: hidden;
-    padding: 28px 30px 32px;
+    padding: 28px var(--frame-gutter) var(--frame-bottom);
     position: relative;
     z-index: 1;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .ambient {
     position: absolute;
@@ -63,8 +66,10 @@
         0 18px 80px #000;
     }
     .phone-content {
+      --frame-gutter: 46px;
+      --frame-bottom: 42px;
       min-height: 100%;
-      padding: 34px 46px 42px;
+      padding-top: 34px;
     }
   }
 </style>

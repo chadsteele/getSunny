@@ -469,6 +469,8 @@
 
 <style>
   .session-main {
+    grid-row: 2;
+    grid-column: 1;
     display: flex;
     flex: 1;
     flex-direction: column;
