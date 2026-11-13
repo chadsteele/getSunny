@@ -8,6 +8,7 @@
     onInterimTranscript: (transcript: string) => void;
     onRetry: (attempt: number, maxAttempts: number) => void;
     onReady: () => void;
+    onDiagnostic: (message: string) => void;
     onError: (error: unknown) => void;
   }
 
@@ -22,11 +23,18 @@
     interimResults: boolean;
     lang: string;
     onstart: (() => void) | null;
+    onaudiostart: (() => void) | null;
+    onaudioend: (() => void) | null;
+    onsoundstart: (() => void) | null;
+    onspeechstart: (() => void) | null;
+    onspeechend: (() => void) | null;
+    onnomatch: (() => void) | null;
     onend: (() => void) | null;
     onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
     onresult: ((event: SpeechRecognitionEventLike) => void) | null;
     start: () => void;
     stop: () => void;
+    abort: () => void;
   };
   type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
@@ -37,6 +45,7 @@
     onInterimTranscript,
     onRetry,
     onReady,
+    onDiagnostic,
     onError,
   }: Props = $props();
   let recognition: SpeechRecognitionLike | undefined;
@@ -44,9 +53,20 @@
   let pendingFinal = '';
   let silenceTimer: ReturnType<typeof setTimeout> | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let diagnosticTimer: ReturnType<typeof setTimeout> | undefined;
+  let resultTimer: ReturnType<typeof setTimeout> | undefined;
   let retryAttempts = 0;
   const maxRetryAttempts = 3;
   const retryDelayMs = 1000;
+  const diagnosticDelayMs = 15000;
+  const resultTimeoutMs = 12000;
+
+  function clearRecognitionTimers() {
+    if (diagnosticTimer !== undefined) clearTimeout(diagnosticTimer);
+    if (resultTimer !== undefined) clearTimeout(resultTimer);
+    diagnosticTimer = undefined;
+    resultTimer = undefined;
+  }
 
   function clearSilenceTimer() {
     if (silenceTimer) clearTimeout(silenceTimer);
@@ -56,6 +76,7 @@
   function stopRecognition() {
     restartBlocked = true;
     clearSilenceTimer();
+    clearRecognitionTimers();
     if (retryTimer !== undefined) clearTimeout(retryTimer);
     retryTimer = undefined;
     retryAttempts = 0;
@@ -66,6 +87,7 @@
   function retryRecognition(reason: string) {
     if (!active || restartBlocked || retryTimer !== undefined) return;
     clearSilenceTimer();
+    clearRecognitionTimers();
     recognition = undefined;
     if (retryAttempts >= maxRetryAttempts) {
       restartBlocked = true;
@@ -121,14 +143,72 @@
     currentRecognition.continuous = true;
     currentRecognition.interimResults = true;
     currentRecognition.lang = navigator.language || 'en-US';
+    let audioStarted = false;
+    let speechDetected = false;
     currentRecognition.onstart = () => {
       if (recognition !== currentRecognition || restartBlocked) return;
-      console.log('[Sunny] Speech recognition listening:', currentRecognition.lang);
+      console.log('[Sunny] Speech recognition service started:', currentRecognition.lang);
       onReady();
       if (pendingFinal.trim()) scheduleTranscript();
+      diagnosticTimer = setTimeout(() => {
+        diagnosticTimer = undefined;
+        if (recognition !== currentRecognition || restartBlocked || speechDetected) return;
+        const message = audioStarted
+          ? 'Recognition audio started, but Chrome has not detected speech. Check your speech service and microphone.'
+          : 'Chrome started recognition, but has not reported audio capture. Check microphone and speech service permissions.';
+        console.warn('[Sunny]', message);
+        onDiagnostic(message);
+      }, diagnosticDelayMs);
+    };
+    currentRecognition.onaudiostart = () => {
+      if (recognition !== currentRecognition || restartBlocked) return;
+      audioStarted = true;
+      console.log('[Sunny] Speech recognition audio capture started');
+    };
+    currentRecognition.onaudioend = () => {
+      if (recognition !== currentRecognition || restartBlocked) return;
+      console.log('[Sunny] Speech recognition audio capture ended');
+    };
+    currentRecognition.onsoundstart = () => {
+      if (recognition !== currentRecognition || restartBlocked) return;
+      console.log('[Sunny] Speech recognition detected sound');
+    };
+    currentRecognition.onspeechstart = () => {
+      if (recognition !== currentRecognition || restartBlocked) return;
+      speechDetected = true;
+      if (diagnosticTimer !== undefined) clearTimeout(diagnosticTimer);
+      diagnosticTimer = undefined;
+      console.log('[Sunny] Speech recognition detected speech');
+      if (resultTimer !== undefined) clearTimeout(resultTimer);
+      resultTimer = setTimeout(() => {
+        resultTimer = undefined;
+        if (recognition !== currentRecognition || restartBlocked || !active) return;
+        console.warn('[Sunny] Speech detected, but recognition returned no result');
+        retryRecognition('no recognition result after speech was detected');
+        try {
+          currentRecognition.abort();
+        } catch (error) {
+          console.warn('[Sunny] Could not stop stalled speech recognition:', error);
+        }
+      }, resultTimeoutMs);
+    };
+    currentRecognition.onspeechend = () => {
+      if (recognition !== currentRecognition || restartBlocked) return;
+      console.log('[Sunny] Speech recognition speech ended');
+    };
+    currentRecognition.onnomatch = () => {
+      if (recognition !== currentRecognition || restartBlocked) return;
+      if (resultTimer !== undefined) clearTimeout(resultTimer);
+      resultTimer = undefined;
+      console.warn('[Sunny] Speech recognition could not match the detected speech');
+      onDiagnostic('Chrome detected speech but could not transcribe it. Please try again.');
     };
     currentRecognition.onresult = (event: SpeechRecognitionEventLike) => {
       if (recognition !== currentRecognition || restartBlocked) return;
+      if (resultTimer !== undefined) clearTimeout(resultTimer);
+      if (diagnosticTimer !== undefined) clearTimeout(diagnosticTimer);
+      resultTimer = undefined;
+      diagnosticTimer = undefined;
       retryAttempts = 0;
       let interim = '';
       let finalized = '';
@@ -138,6 +218,11 @@
         else interim += result[0].transcript;
       }
 
+      console.log('[Sunny] Speech recognition result received:', {
+        final: Boolean(finalized.trim()),
+        interim: Boolean(interim.trim()),
+      });
+      if (finalized.trim() || interim.trim()) onReady();
       if (finalized.trim()) pendingFinal = `${pendingFinal} ${finalized}`.trim();
       const transcript = `${pendingFinal} ${interim}`.trim();
       if (transcript) onInterimTranscript(transcript);
@@ -166,6 +251,7 @@
     };
     currentRecognition.onend = () => {
       if (recognition !== currentRecognition) return;
+      clearRecognitionTimers();
       recognition = undefined;
       if (active && !restartBlocked) {
         console.log('[Sunny] Speech recognition ended; restarting');

@@ -40,6 +40,7 @@
   let waitingProgress = $state(0);
   let voiceDownload = $state<VoiceDownloadProgress | null>(null);
   let speechRetry = $state<{ attempt: number; maxAttempts: number } | null>(null);
+  let speechDiagnostic = false;
   let waitingRemainingMs = $state(60_000);
   let waitingTimer: ReturnType<typeof setInterval> | undefined;
   let waitingStartedAt = 0;
@@ -241,9 +242,15 @@
   }
 
   function handleSpeechReady() {
-    if (!speechRetry) return;
+    if (!speechRetry && !speechDiagnostic) return;
     speechRetry = null;
+    speechDiagnostic = false;
     reportStatus('Listening');
+  }
+
+  function handleSpeechDiagnostic(message: string) {
+    speechDiagnostic = true;
+    reportStatus(message);
   }
 
   async function startConversation() {
@@ -266,6 +273,7 @@
   function stopConversation() {
     conversationActive = false;
     speechRetry = null;
+    speechDiagnostic = false;
     stopListening();
     stopWaitingProgress();
     mediaStream?.getTracks().forEach((track) => track.stop());
@@ -410,6 +418,7 @@
       onInterimTranscript={(transcript) => (liveTranscript = transcript)}
       onRetry={handleSpeechRetry}
       onReady={handleSpeechReady}
+      onDiagnostic={handleSpeechDiagnostic}
       onError={handleSpeechError}
     />
     {#if showingLogs}
