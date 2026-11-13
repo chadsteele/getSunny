@@ -3,47 +3,32 @@
   import ChatThread from './ChatThread.svelte';
   import Footer from './Footer.svelte';
   import PiperTTS from './PiperTTS.svelte';
+  import SpeechToText from './SpeechToText.svelte';
   import Sparkle from './Sparkle.svelte';
   import { createChatThreadStore } from '../lib/chat-thread-store.svelte';
+  import prompts from '../lib/prompts';
   import { splitSentences } from '../lib/speech-text';
   import { logger as console } from '../lib/logger';
   import type { VoiceDownloadProgress } from '../lib/piper-voice-cache';
 
   type Status = 'loading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
-  type SpeechRecognitionResultLike = { transcript: string };
-  type SpeechRecognitionEventLike = Event & {
-    resultIndex: number;
-    results: ArrayLike<{ isFinal: boolean; 0: SpeechRecognitionResultLike }>;
-  };
-  type SpeechRecognitionErrorEventLike = Event & { error: string };
-  type SpeechRecognitionLike = {
-    continuous: boolean;
-    interimResults: boolean;
-    lang: string;
-    onend: (() => void) | null;
-    onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
-    onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-    start: () => void;
-    stop: () => void;
-  };
-  type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
   const chatThread = createChatThreadStore();
   const voiceCapabilityInstruction =
-    'Voice capability: You can speak your responses aloud through the voice system. Never say that you cannot speak, talk, or use your voice. When asked to speak, respond naturally and confidently; do not describe implementation details unless the user asks. Do not describe or verbalize emoji characters; omit emoji from spoken responses.';
+    'Voice capability: You can speak your responses aloud through the voice system. Never say that you cannot speak, talk, or use your voice. When asked to speak, respond naturally and confidently. Do not describe or verbalize emoji characters; omit emoji from spoken responses.';
   let status = $state<Status>('loading');
   let statusMessage = $state('Connecting to Sunny...');
   let liveTranscript = $state('');
   let speakingSentence = $state('');
   let systemPrompt = '';
+  // Increase this value to wait longer after Sunny last hears speech.
+  const speechSilenceTimeoutMs = 1800;
   let conversationActive = $state(false);
   let intensity = $state(0.18);
   let reviewMessageId = $state<number | undefined>();
   let piperTts: PiperTTS;
   let mediaStream: MediaStream | undefined;
-  let speechRecognition: SpeechRecognitionLike | undefined;
-  let recognitionRestartBlocked = false;
-  let sunnySpeaking = false;
-  let responseInProgress = false;
+  let sunnySpeaking = $state(false);
+  let responseInProgress = $state(false);
   let microphoneContext: AudioContext | undefined;
   let microphoneAnalyser: AnalyserNode | undefined;
   let microphoneData: Uint8Array<ArrayBuffer> | undefined;
@@ -191,6 +176,7 @@
   async function processTranscript(text: string) {
     if (responseInProgress) return;
     responseInProgress = true;
+    stopListening();
     liveTranscript = '';
     status = 'thinking';
     startWaitingProgress();
@@ -211,20 +197,17 @@
       stopWaitingProgress();
       if (conversationActive) {
         status = 'listening';
-        startSpeechRecognition();
+        startListening();
       }
     }
   }
 
-  function stopSpeechRecognition() {
-    recognitionRestartBlocked = true;
-    speechRecognition?.stop();
-    speechRecognition = undefined;
+  function stopListening() {
     mediaStream?.getAudioTracks().forEach((track) => (track.enabled = false));
     stopMicrophoneVisualizer();
   }
 
-  function startSpeechRecognition() {
+  function startListening() {
     if (
       microphoneMuted ||
       !conversationActive ||
@@ -234,61 +217,17 @@
     )
       return;
     mediaStream.getAudioTracks().forEach((track) => (track.enabled = true));
-    const browserWindow = window as Window & {
-      SpeechRecognition?: SpeechRecognitionConstructor;
-      webkitSpeechRecognition?: SpeechRecognitionConstructor;
-    };
-    const Recognition = browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
-    if (!Recognition) {
-      throw new Error('Browser speech recognition is not supported. Try Chrome or Edge.');
-    }
-
-    recognitionRestartBlocked = false;
-    const recognition = new Recognition();
-    speechRecognition = recognition;
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = navigator.language || 'en-US';
-    recognition.onresult = (event: SpeechRecognitionEventLike) => {
-      if (speechRecognition !== recognition || recognitionRestartBlocked || sunnySpeaking) return;
-      let interim = '';
-      let final = '';
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        if (result.isFinal) final += result[0].transcript;
-        else interim += result[0].transcript;
-      }
-      if (interim.trim()) {
-        liveTranscript = interim.trim();
-        console.log('[Sunny] Transcription:', liveTranscript);
-      }
-      if (final.trim()) {
-        liveTranscript = final.trim();
-        console.log('[Sunny] Transcription:', liveTranscript);
-        reportStatus('', 'thinking');
-        recognition.stop();
-        void processTranscript(final);
-      }
-    };
-    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
-      if (event.error === 'no-speech' || event.error === 'aborted') return;
-      reportStatus(`Speech recognition failed: ${event.error}`, 'error');
-    };
-    recognition.onend = () => {
-      if (
-        speechRecognition === recognition &&
-        !recognitionRestartBlocked &&
-        conversationActive &&
-        !microphoneMuted &&
-        !responseInProgress &&
-        !sunnySpeaking
-      ) {
-        startSpeechRecognition();
-      }
-    };
-    recognition.start();
-    status = 'listening';
     startMicrophoneVisualizer();
+  }
+
+  function handleTranscript(transcript: string) {
+    reportStatus('', 'thinking');
+    void processTranscript(transcript);
+  }
+
+  function handleSpeechError(error: unknown) {
+    stopListening();
+    reportStatus(error instanceof Error ? error.message : 'Speech recognition failed.', 'error');
   }
 
   async function startConversation() {
@@ -306,17 +245,15 @@
     status = 'listening';
     intensity = 0.45;
     startMicrophoneVisualizer();
-    startSpeechRecognition();
   }
 
   function stopConversation() {
     conversationActive = false;
-    stopSpeechRecognition();
+    stopListening();
     stopWaitingProgress();
     mediaStream?.getTracks().forEach((track) => track.stop());
     mediaStream = undefined;
     stopMicrophoneVisualizer();
-    piperTts.stop();
     status = 'paused';
   }
 
@@ -363,7 +300,7 @@
 
   function handlePiperSentence(sentence: string) {
     sunnySpeaking = true;
-    stopSpeechRecognition();
+    stopListening();
     speakingSentence = sentence;
     status = 'speaking';
   }
@@ -371,6 +308,10 @@
   function handlePiperEnd() {
     sunnySpeaking = false;
     speakingSentence = '';
+    if (conversationActive && !responseInProgress && !microphoneMuted) {
+      status = 'listening';
+      startListening();
+    }
   }
 
   function handlePiperIntensity(nextIntensity: number) {
@@ -387,12 +328,7 @@
   }
 
   async function loadPrompt() {
-    const response = await fetch('/api/prompt/', { cache: 'no-store' });
-    if (!response.ok) throw new Error(`Prompt request failed: ${response.status}`);
-    const payload = (await response.json()) as { prompts?: unknown };
-    if (!Array.isArray(payload.prompts))
-      throw new Error('Conversation prompts are not configured.');
-    const [openingPrompt, conversationPrompt] = payload.prompts;
+    const [openingPrompt, conversationPrompt] = prompts;
     if (typeof openingPrompt !== 'string' || !openingPrompt.trim()) {
       throw new Error('The session opening prompt is not configured.');
     }
@@ -444,6 +380,17 @@
       onIntensityChange={handlePiperIntensity}
       onDownloadProgress={(progress) => (voiceDownload = progress)}
       onError={handlePiperError}
+    />
+    <SpeechToText
+      active={conversationActive &&
+        !microphoneMuted &&
+        !responseInProgress &&
+        !sunnySpeaking &&
+        status === 'listening'}
+      silenceTimeoutMs={speechSilenceTimeoutMs}
+      onTranscript={handleTranscript}
+      onInterimTranscript={(transcript) => (liveTranscript = transcript)}
+      onError={handleSpeechError}
     />
     <Sparkle {intensity} />
     <ChatThread

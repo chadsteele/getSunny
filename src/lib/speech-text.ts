@@ -57,8 +57,20 @@ export function splitSentences(text: string) {
       const match = remaining.match(/^([\s\S]{1,200}?(?:[!?]|(?<!\b[A-Z])\.))(?:\s|$)/);
       if (!match) {
         if (remaining.length < 200) break;
-        sentences.push(remaining.slice(0, 200).trim());
-        remaining = remaining.slice(200).trim();
+        const boundary = remaining.slice(0, 201).match(/^([\s\S]{1,200})\s/);
+        if (boundary) {
+          sentences.push(boundary[1].trim());
+          remaining = remaining.slice(boundary[0].length).trim();
+        } else {
+          const nextSpace = remaining.search(/\s/);
+          if (nextSpace < 0) {
+            sentences.push(remaining);
+            remaining = '';
+          } else {
+            sentences.push(remaining.slice(0, nextSpace));
+            remaining = remaining.slice(nextSpace).trim();
+          }
+        }
       } else {
         const sentence = match[1].trim();
         if (!/\s/.test(sentence)) break;
