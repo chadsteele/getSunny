@@ -23,6 +23,10 @@
     stop: () => void;
   };
   type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+  type PiperEngine = {
+    generate: (text: string, voice: string, speaker?: number) => Promise<{ file: Blob }>;
+    destroy: () => void;
+  };
 
   const chatThread = createChatThreadStore();
   const voiceCapabilityInstruction =
@@ -42,6 +46,9 @@
   let audioUrl: string | undefined;
   let speechQueue = Promise.resolve();
   let speechPrefetch = new Map<string, Promise<Blob>>();
+  let piperEngine: PiperEngine | undefined;
+  let piperEnginePromise: Promise<PiperEngine> | undefined;
+  const piperVoice = 'en_US-libritts_r-medium';
   const maxCachedSpeech = 100;
   let responseInProgress = false;
   let microphoneContext: AudioContext | undefined;
@@ -118,32 +125,45 @@
     return { sentences, remaining };
   }
 
+  function getPiperEngine() {
+    piperEnginePromise ??= import('piper-tts-web')
+      .then(({ PiperWebEngine }) => {
+        const engine = new PiperWebEngine() as PiperEngine;
+        piperEngine = engine;
+        return engine;
+      })
+      .catch((error: unknown) => {
+        piperEnginePromise = undefined;
+        throw error;
+      });
+    return piperEnginePromise;
+  }
+
+  async function preloadPiper() {
+    try {
+      const engine = await getPiperEngine();
+      await engine.generate('Ready.', piperVoice);
+      console.log('[Sunny] Piper voice model ready');
+    } catch (error) {
+      console.error('[Sunny] Piper preload failed:', error);
+      reportStatus(
+        error instanceof Error ? `Piper TTS failed: ${error.message}` : 'Piper TTS failed.',
+        'error',
+      );
+    }
+  }
+
   function fetchSpeech(text: string) {
     const cacheKey = text.trim().replace(/\s+/g, ' ');
     const existing = speechPrefetch.get(cacheKey);
     if (existing) {
-      console.log('[Sunny] TTS cache hit (browser)');
+      console.log('[Sunny] Piper cache hit (browser)');
       return existing;
     }
-    console.log('[Sunny] TTS cache miss; requesting TTS service');
-    const request = fetch(endpoint('tts'), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text: cacheKey }),
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          let message = `TTS request failed: ${response.status}`;
-          try {
-            const result = (await response.json()) as { error?: string };
-            if (result.error) message = result.error;
-          } catch {
-            // Keep the HTTP status when the function does not return JSON.
-          }
-          throw new Error(message);
-        }
-        return response.blob();
-      })
+    console.log('[Sunny] Piper cache miss; generating locally');
+    const request = getPiperEngine()
+      .then((engine) => engine.generate(cacheKey, piperVoice))
+      .then(({ file }) => file)
       .catch((error: unknown) => {
         speechPrefetch.delete(cacheKey);
         throw error;
@@ -538,6 +558,7 @@
     };
     window.addEventListener('sunny-chat-cleared', clearChatHistory);
     window.addEventListener('sunny-chat-restore', restoreChatHistory);
+    void preloadPiper();
     void loadPrompt()
       .then(() => {
         status = 'paused';
@@ -551,6 +572,7 @@
       window.removeEventListener('sunny-chat-restore', restoreChatHistory);
       stopConversation();
       closeSpeechVisualizer();
+      piperEngine?.destroy();
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   });

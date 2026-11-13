@@ -3,9 +3,9 @@
 ## Architecture
 
 - This is a SvelteKit application using strict TypeScript and Svelte 5.
-- The voice experience uses standalone Netlify Functions in `../netlify/functions/` for Deepgram transcription, streamed Venice responses, and OpenAI TTS.
+- The voice experience uses the browser Web Speech API for transcription, local Piper TTS for speech, and a standalone Netlify Function for streamed Venice responses.
 - [VoiceAgent.svelte](../src/components/VoiceAgent.svelte) owns microphone lifecycle, remote requests, sentence buffering, ordered TTS playback, and chat rendering.
-- Keep `DEEPGRAM_API_KEY`, `VENICE_API_KEY`, and `SUNNY_OPENAI_API_KEY` server-side in Netlify environment variables.
+- Keep `VENICE_API_KEY` server-side in Netlify environment variables. Browser STT and local Piper TTS do not require provider API keys.
 - The `/api/prompt` endpoint owns the system prompt and session scripts. Keep the `Session Opening Script` marker synchronized with the parser in `VoiceAgent.svelte`.
 - The browser does not download or run AI models. Do not reintroduce local inference or model assets.
 

@@ -31,6 +31,7 @@
   "dependencies": {
     "dompurify": "^3.4.17",
     "marked": "^18.2.0",
-    "openai": "^7.55.0"
+    "openai": "^7.55.0",
+    "piper-tts-web": "^1.1.2"
   }
 }
