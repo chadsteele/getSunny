@@ -40,6 +40,27 @@ Run `npm run verify:venice` to make a minimal Venice chat completion request.
 
 Configure all three keys in Netlify under **Site configuration → Environment variables**. Never expose them in `PUBLIC_` variables or client-side code.
 
+### User accounts
+
+The **Sign in** menu option opens `/user`. Users can register or sign in with an emailed magic link, edit their name, phone, and mailing address, and sign out. Supabase Auth stores email and authentication data; the `profiles` table stores the other fields. Registration also supplies those fields as Supabase Auth user metadata so the profile can be created before email confirmation. The profile table uses row-level security so authenticated users can only read or modify their own profile.
+
+Set these browser-visible values in `.env.local` for local development and as Netlify build environment variables for deployment:
+
+```bash
+VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
+```
+
+Use the project's **publishable** key (or legacy anon key), never a secret or service-role key. Vite embeds these values in the browser bundle. Apply the migration in [`supabase/migrations/`](./supabase/migrations/) to the project before using accounts. In the Supabase Auth settings, enable email sign-in, set the site URL, and allow the `/user` redirect URLs for each environment (for example `http://localhost:5173/user` and `https://YOUR_SITE/user`). Configure an appropriate email sender for production. Existing users without a profile will be asked to complete one after sign-in.
+
+For the configured Supabase project:
+
+1. In [Auth URL Configuration](https://supabase.com/dashboard/project/ieuwlzwofxckmfvxknmr/auth/url-configuration), set the Site URL to `https://getsunny.netlify.app` and add `https://getsunny.netlify.app/user` and `http://localhost:5173/user` to the redirect allow list. Add any other actual development or preview URLs separately.
+2. In [SMTP settings](https://supabase.com/dashboard/project/ieuwlzwofxckmfvxknmr/auth/smtp), configure a transactional email provider and its verified sender. Enter SMTP credentials in Supabase, not in this repository. Supabase's default email service is restricted to authorized team addresses and is not intended for production.
+3. Deploy the application after setting the Netlify build variables, then verify registration, the emailed link, profile editing, and sign-out using a real account.
+
+Conversation history remains in browser storage and is not tied to the signed-in account; signing out does not clear it. On a shared device, use **Delete chat history** before leaving.
+
 The app is mobile-first and becomes a framed phone layout on larger screens.
 
 ## Build
@@ -79,7 +100,7 @@ Configure `VENICE_API_KEY`, `DEEPGRAM_API_KEY`, and `SUNNY_OPENAI_API_KEY` in Ne
 
 ## Development requirements
 
-Use Node.js 22 or newer. The repository includes an [.nvmrc](./.nvmrc) file for
+Use Node.js 22.13 or newer. The repository includes an [.nvmrc](./.nvmrc) file for
 `nvm` users:
 
 ```bash

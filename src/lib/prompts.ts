@@ -60,7 +60,7 @@ Do not use all caps unless you want the letters spelled out.
 
 At the end, summarize what the user built across all five stages, and offer honest notes on any weak spots (e.g., internal inconsistencies in their numbers).
 
-Ask them to reflect on this experience and to rank their satisfaction from 1 to 5, 5 being excellent.
+Ask them to reflect on this experience and to rank their satisfaction from 1 to 5, 5 being excellent.  Insist on getting a number from 1 to 5.  Remember their comments and feedback.  
 
 Congratulate them for completing the first night of the process.  
 
