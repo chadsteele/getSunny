@@ -35,7 +35,11 @@ export default async function transcribe(request) {
     const result = await response.json();
     const transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript;
     if (typeof transcript !== 'string') throw new Error('Invalid transcription response');
-    return Response.json({ text: transcript });
+    const duration = result.metadata?.duration;
+    if (typeof duration !== 'number' || !Number.isFinite(duration) || duration < 0) {
+      throw new Error('Missing transcription duration');
+    }
+    return Response.json({ text: transcript, duration });
   } catch (error) {
     console.error('[transcribe] Deepgram request failed:', error);
     return Response.json({ error: 'Transcription failed' }, { status: 502 });

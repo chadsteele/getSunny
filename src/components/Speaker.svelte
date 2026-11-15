@@ -3,6 +3,7 @@
   import { normalizeForDisplay, normalizeForSpeech, splitSentences } from '../lib/speech-text';
   import { logger as console } from '../lib/logger';
   import AudioControl from './AudioControl.svelte';
+  import { ttsUsage, type UsageRecord } from '../lib/usage';
 
   interface Props {
     muted: boolean;
@@ -12,6 +13,8 @@
     onVisualizerStop: () => void;
     onToggle: () => void;
     onError?: (error: unknown) => void;
+    onUsageStart: (group: string) => number;
+    onUsage: (id: number, usage: UsageRecord) => void;
   }
 
   let {
@@ -22,6 +25,8 @@
     onVisualizerStop,
     onToggle,
     onError,
+    onUsageStart,
+    onUsage,
   }: Props = $props();
 
   let audio: HTMLAudioElement | undefined;
@@ -34,12 +39,14 @@
   type SpeechResult = { blob: Blob } | { error: unknown };
   type SpeechJob = {
     sentence: string;
+    group: string;
     controller: AbortController;
     result?: Promise<SpeechResult>;
   };
   let speechJobs: SpeechJob[] = [];
 
-  async function generateSpeech(text: string, signal: AbortSignal) {
+  async function generateSpeech(text: string, signal: AbortSignal, group: string) {
+    const usageId = onUsageStart(group);
     console.log(`[Sunny]  ${text}`);
     const response = await fetch('/.netlify/functions/tts', {
       method: 'POST',
@@ -51,12 +58,28 @@
       const body = await response.text();
       throw new Error(`Speech synthesis failed (${response.status}): ${body}`);
     }
-    return response.blob();
+    const blob = await response.blob();
+    const length = response.headers.get('x-sunny-tts-instruction-length');
+    if (length === null || !/^\d+$/.test(length)) {
+      console.warn('[Sunny] Speech usage estimate unavailable: missing instruction length.');
+      onUsage(usageId, {
+        service: 'tts',
+        model: 'gpt-4o-mini-tts',
+        inputTokens: null,
+        outputTokens: null,
+        audioSeconds: null,
+        estimatedTokens: true,
+        estimatedCostUsd: null,
+      });
+    } else {
+      onUsage(usageId, ttsUsage(text, Number(length)));
+    }
+    return blob;
   }
 
   function prefetchSpeech() {
     for (const job of speechJobs.slice(0, 3)) {
-      job.result ??= generateSpeech(job.sentence, job.controller.signal).then(
+      job.result ??= generateSpeech(job.sentence, job.controller.signal, job.group).then(
         (blob): SpeechResult => ({ blob }),
         (error: unknown): SpeechResult => ({ error }),
       );
@@ -140,12 +163,16 @@
     }
   }
 
-  function queueSentence(text: string, onReady?: () => boolean | void | Promise<boolean | void>) {
+  function queueSentence(
+    text: string,
+    group: string,
+    onReady?: () => boolean | void | Promise<boolean | void>,
+  ) {
     const displaySentence = normalizeForDisplay(text);
     const sentence = normalizeForSpeech(text);
     if (!displaySentence || !sentence || muted) return;
     const requestVersion = playbackVersion;
-    const job: SpeechJob = { sentence, controller: new AbortController() };
+    const job: SpeechJob = { sentence, group, controller: new AbortController() };
     speechJobs.push(job);
     prefetchSpeech();
     speechQueue = speechQueue
@@ -167,7 +194,11 @@
       });
   }
 
-  export function speak(text: string, onReady?: () => boolean | void | Promise<boolean | void>) {
+  export function speak(
+    text: string,
+    group: string,
+    onReady?: () => boolean | void | Promise<boolean | void>,
+  ) {
     const { sentences, remaining } = splitSentences(text);
     let notified = false;
     const notifyReady = () => {
@@ -175,8 +206,8 @@
       notified = true;
       return onReady?.();
     };
-    sentences.forEach((sentence) => queueSentence(sentence, notifyReady));
-    if (remaining.trim()) queueSentence(remaining, notifyReady);
+    sentences.forEach((sentence) => queueSentence(sentence, group, notifyReady));
+    if (remaining.trim()) queueSentence(remaining, group, notifyReady);
     return speechQueue;
   }
 

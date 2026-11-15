@@ -110,9 +110,37 @@ test('uses session prompts and validates missing prompt text', () => {
     opening: outline[0].intro,
     prompt: outline[0].prompt,
   });
+
   assert.throws(() => sessionPrompts({ ...outline[0], intro: ' ' }), /opening/);
   assert.throws(() => sessionPrompts({ ...outline[0], prompt: '' }), /system prompt/);
   const intro =
     'Session Opening Script\n"Hello there"\nSession Closing (After Story Consolidation)';
   assert.equal(sessionPrompts({ ...outline[0], intro }).opening, 'Hello there');
+});
+
+test('usage-only history does not suppress the session introduction', () => {
+  const { chatStorageKey, createSessionChat, selectSessionForChat } = sessionStorageApi;
+  const session = outline[4];
+  local.set(
+    chatStorageKey(session.path),
+    JSON.stringify([
+      {
+        id: 0,
+        role: 'status',
+        content: '',
+        usageGroup: 'failed-intro',
+        usage: {
+          service: 'tts',
+          model: 'gpt-4o-mini-tts',
+          inputTokens: null,
+          outputTokens: null,
+          audioSeconds: null,
+          estimatedTokens: true,
+          estimatedCostUsd: null,
+        },
+      },
+    ]),
+  );
+  selectSessionForChat(session, false);
+  assert.equal(createSessionChat(session.path).initialize(), true);
 });

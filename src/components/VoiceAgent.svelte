@@ -11,6 +11,8 @@
   import type { BabyStep } from '../lib/sessions/types';
   import { createSessionChat, sessionPrompts } from '../lib/session-manager';
   import { logger as console } from '../lib/logger';
+  import { readChatStream } from '../lib/chat-stream';
+  import { sttUsage, summarizeUsage, unknownUsage, type UsageRecord } from '../lib/usage';
 
   let { showingLogs, session }: { showingLogs: boolean; session: BabyStep } = $props();
   type Status = 'loading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
@@ -38,6 +40,11 @@
   let reportInProgress = false;
   let microphoneMuted = $state(true);
   let speakerMuted = $state(false);
+  let showUsage = $state(false);
+
+  function startUsage(service: UsageRecord['service'], group: string) {
+    return chatThread.addUsage(unknownUsage(service), group);
+  }
 
   function reportStatus(message: string, nextStatus?: Status) {
     statusMessage = message;
@@ -70,6 +77,8 @@
     try {
       const messages = conversationMessages();
       const timestamps = reportTimestamps(messages);
+      const group = crypto.randomUUID();
+      const usageId = startUsage('llm', group);
       const response = await fetch(endpoint('chat-stream'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -79,10 +88,17 @@
           prompt: 'Produce the session report as JSON.',
         }),
       });
-      if (!response.ok) {
-        throw new Error(`Report request failed (${response.status}): ${await response.text()}`);
-      }
-      const report = { ...parseSessionReport(await response.text()), ...timestamps };
+      let text = '';
+      await readChatStream(
+        response,
+        (chunk) => (text += chunk),
+        (usage) => chatThread.updateUsage(usageId, usage),
+      );
+      const report = {
+        ...parseSessionReport(text),
+        ...timestamps,
+        usage: summarizeUsage(chatThread.usageRecords),
+      };
       console.log('[Sunny] Session report:\n' + JSON.stringify(report, null, 2));
     } catch (error) {
       console.error('[Sunny] Session report failed:', error);
@@ -92,8 +108,10 @@
   }
 
   async function streamResponse(prompt: string, conversationHistory: ReturnType<typeof history>) {
-    const assistantId = chatThread.add('assistant', '...');
+    const group = crypto.randomUUID();
+    const assistantId = chatThread.add('assistant', '...', group);
     if (assistantId === undefined) throw new Error('Unable to create assistant message.');
+    const usageId = startUsage('llm', group);
     console.log('[Sunny] LLM SaaS request started');
     const response = await fetch(endpoint('chat-stream'), {
       method: 'POST',
@@ -111,8 +129,6 @@
       throw new Error(message);
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
     let fullText = '';
     let sentenceBuffer = '';
     let receivedFirstChunk = false;
@@ -123,24 +139,27 @@
       await chatThreadView?.scrollToBottomBeforeSpeech();
       return true;
     };
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      if (!receivedFirstChunk) {
-        receivedFirstChunk = true;
-        console.log('[Sunny] LLM SaaS stream started');
-      }
-      fullText += chunk;
-      sentenceBuffer += chunk;
-      chatThread.update(assistantId, fullText);
-      const split = splitSentences(sentenceBuffer);
-      split.sentences.forEach((sentence) => void speaker.speak(sentence, prepareFirstSpeech));
-      sentenceBuffer = split.remaining;
-    }
+    await readChatStream(
+      response,
+      (chunk) => {
+        if (!receivedFirstChunk) {
+          receivedFirstChunk = true;
+          console.log('[Sunny] LLM SaaS stream started');
+        }
+        fullText += chunk;
+        sentenceBuffer += chunk;
+        chatThread.update(assistantId, fullText);
+        const split = splitSentences(sentenceBuffer);
+        split.sentences.forEach(
+          (sentence) => void speaker.speak(sentence, group, prepareFirstSpeech),
+        );
+        sentenceBuffer = split.remaining;
+      },
+      (usage) => chatThread.updateUsage(usageId, usage),
+    );
     const finalText = fullText.trim();
     chatThread.update(assistantId, finalText);
-    await speaker.speak(sentenceBuffer, prepareFirstSpeech);
+    await speaker.speak(sentenceBuffer, group, prepareFirstSpeech);
     console.log('[Sunny] LLM SaaS response complete');
   }
 
@@ -154,6 +173,8 @@
     const controller = new AbortController();
     transcriptionAbort = controller;
     try {
+      const group = crypto.randomUUID();
+      const usageId = startUsage('stt', group);
       const response = await fetch(endpoint('transcribe'), {
         method: 'POST',
         headers: { 'content-type': audio.type || 'audio/webm' },
@@ -168,10 +189,13 @@
         !result ||
         typeof result !== 'object' ||
         !('text' in result) ||
-        typeof result.text !== 'string'
+        typeof result.text !== 'string' ||
+        !('duration' in result) ||
+        typeof result.duration !== 'number'
       ) {
         throw new Error('Invalid transcription response.');
       }
+      chatThread.updateUsage(usageId, sttUsage(result.duration));
       const transcript = result.text.trim();
       if (version !== conversationVersion || !conversationActive || microphoneMuted) return;
       transcriptionAbort = undefined;
@@ -180,7 +204,7 @@
         return;
       }
       const conversationHistory = history();
-      chatThread.add('user', transcript);
+      chatThread.add('user', transcript, group);
       await streamResponse(transcript, conversationHistory);
     } catch (error) {
       if (version !== conversationVersion) return;
@@ -278,10 +302,12 @@
     reviewMessageId = undefined;
   }
 
-  function replayAssistantMessage(message: string) {
+  function replayAssistantMessage(message: { id: number; content: string; usageGroup?: string }) {
     if (speakerMuted) return;
     speaker.stop();
-    void speaker.speak(message);
+    const group = message.usageGroup ?? crypto.randomUUID();
+    if (!message.usageGroup) chatThread.setUsageGroup(message.id, group);
+    void speaker.speak(message.content, group);
   }
 
   function handleSpeakingSentence(sentence: string, keepBottom: boolean) {
@@ -317,8 +343,9 @@
     const { opening, prompt } = sessionPrompts(session);
     systemPrompt = `${prompt}\n\n${voiceCapabilityInstruction}`;
     if (opening && playIntro) {
-      await speaker.speak(opening, async () => {
-        chatThread.add('assistant', opening);
+      const group = crypto.randomUUID();
+      await speaker.speak(opening, group, async () => {
+        chatThread.add('assistant', opening, group);
         await chatThreadView?.scrollToBottomBeforeSpeech();
         return true;
       });
@@ -326,6 +353,7 @@
   }
 
   onMount(() => {
+    showUsage = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
     const clearChatHistory = () => {
       try {
         chatThread.clear();
@@ -379,6 +407,8 @@
       <ChatThread
         bind:this={chatThreadView}
         messages={chatThread.messages}
+        usageEntries={chatThread.usageEntries}
+        {showUsage}
         {liveTranscript}
         {speakingSentence}
         {reviewMessageId}
@@ -404,6 +434,8 @@
         onVisualizerStart={(audio) => sparkle.startSpeaker(audio)}
         onVisualizerStop={() => sparkle?.stopSpeaker()}
         onError={handleSpeakingError}
+        onUsageStart={(group) => startUsage('tts', group)}
+        onUsage={(id, usage) => chatThread.updateUsage(id, usage)}
       />
     {/snippet}
     {#snippet microphoneControl()}

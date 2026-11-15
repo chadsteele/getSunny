@@ -55,7 +55,7 @@ export function createSessionChat(path: string) {
       chat.clear();
       clearRestartRequest();
     }
-    return chat.messages.length === 0;
+    return !chat.messages.some((message) => message.role !== 'status');
   }
   return { chat, initialize };
 }

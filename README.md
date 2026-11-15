@@ -20,6 +20,23 @@ Use **Show logger** in the menu to view the most recent 200 application log entr
 
 Use **Report** in the menu to request a JSON session report from Venice and display it in the logger without speech. The report uses the conversation history available at the time of the request, and can contain sensitive conversation details. The `firstTimestamp` and `lastTimestamp` fields are the stored UTC timestamps of the first and last messages in that history; they are `null` when unavailable. Its generated fields and rating are validated before logging; errors appear in the logger.
 
+Usage records are saved alongside the session chat in browser storage, including requests
+for replays and reports and requests associated with deleted or restarted chats. On localhost,
+each chat bubble displays its associated usage and estimated cost; the session report contains
+totals for the entire saved session. Older messages have no recoverable usage records. Pending,
+failed, interrupted, or provider responses without usage remain marked as unknown, so totals
+can be incomplete; `unknownCosts` and `unknownTokenRequests` indicate this.
+
+Venice reports input and output tokens. Deepgram reports audio duration, not token counts.
+OpenAI's speech endpoint returns audio without token usage, so TTS tokens and duration are
+rough estimates: four characters per input token (including voice instructions), 150 words
+per minute adjusted for the configured 1.3x speed, and 25 audio tokens per second. Prices are
+estimates in USD using public pay-as-you-go rates: [Venice GLM 5.2](https://docs.venice.ai/models/glm-5-2.md)
+($1.40 input / $4.40 output per million tokens), [OpenAI GPT-4o mini TTS](https://developers.openai.com/api/docs/models/gpt-4o-mini-tts)
+($0.60 text input / $12 audio output per million tokens), and [Deepgram Nova-3 prerecorded](https://deepgram.com/pricing)
+($0.0043 per minute). Actual charges may differ due to provider rates, billing increments,
+discounts, tokenization, and speech duration. Review these rates when changing models or plans.
+
 Speech is sent after the microphone level falls below the speech threshold for the interval set by `speechSilenceTimeoutMs` in [`VoiceAgent.svelte`](./src/components/VoiceAgent.svelte). Recordings are limited to 60 seconds. Transcription is returned after recording, not displayed live. Audio and conversation text are sent to the configured providers, so an internet connection and working provider credentials are required.
 
 ## Local development

@@ -40,6 +40,7 @@ export default async function chatStream(request) {
       ],
       temperature: 0.35,
       stream: true,
+      stream_options: { include_usage: true },
     });
 
     const encoder = new TextEncoder();
@@ -48,7 +49,13 @@ export default async function chatStream(request) {
         try {
           for await (const chunk of stream) {
             const text = chunk.choices[0]?.delta?.content;
-            if (text) controller.enqueue(encoder.encode(text));
+            if (text)
+              controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'text', text })}\n`));
+            if (chunk.usage) {
+              controller.enqueue(
+                encoder.encode(`${JSON.stringify({ type: 'usage', usage: chunk.usage })}\n`),
+              );
+            }
           }
           controller.close();
         } catch (error) {
@@ -59,7 +66,7 @@ export default async function chatStream(request) {
     return new Response(body, {
       headers: {
         'cache-control': 'no-cache',
-        'content-type': 'text/plain; charset=utf-8',
+        'content-type': 'application/x-ndjson; charset=utf-8',
         'transfer-encoding': 'chunked',
       },
     });

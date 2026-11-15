@@ -3,14 +3,17 @@
   import { marked } from 'marked';
   import { tick } from 'svelte';
   import type { ChatMessage } from '../lib/chat-thread-store.svelte';
+  import type { UsageRecord } from '../lib/usage';
 
   interface Props {
     messages: ChatMessage[];
     liveTranscript?: string;
     speakingSentence?: string;
     reviewMessageId?: number;
+    usageEntries: { group: string; usage: UsageRecord }[];
+    showUsage: boolean;
     onUserMessageClick?: (messageId: number) => void;
-    onAssistantMessageClick?: (message: string) => void;
+    onAssistantMessageClick?: (message: ChatMessage) => void;
     onDeleteReview?: () => void;
     onContinueReview?: () => void;
   }
@@ -20,6 +23,8 @@
     liveTranscript = '',
     speakingSentence = '',
     reviewMessageId,
+    usageEntries,
+    showUsage,
     onUserMessageClick,
     onAssistantMessageClick,
     onDeleteReview,
@@ -36,16 +41,43 @@
     return DOMPurify.sanitize(marked.parse(content, { async: false, breaks: true }));
   }
 
-  function replayAssistantMessage(event: MouseEvent, content: string) {
+  function replayAssistantMessage(event: MouseEvent, message: ChatMessage) {
     if (event.target instanceof HTMLElement && event.target.closest('a, button')) return;
-    onAssistantMessageClick?.(content);
+    onAssistantMessageClick?.(message);
   }
 
-  function replayAssistantMessageFromKeyboard(event: KeyboardEvent, content: string) {
+  function replayAssistantMessageFromKeyboard(event: KeyboardEvent, message: ChatMessage) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      onAssistantMessageClick?.(content);
+      onAssistantMessageClick?.(message);
     }
+  }
+
+  function usageFor(message: ChatMessage) {
+    if (!message.usageGroup) return [];
+    return usageEntries
+      .filter(({ group }) => group === message.usageGroup)
+      .map(({ usage }) => usage);
+  }
+
+  function usageLabel(records: UsageRecord[]) {
+    return (['stt', 'llm', 'tts'] as const)
+      .flatMap((service) => {
+        const selected = records.filter((record) => record.service === service);
+        if (!selected.length) return [];
+        const known = selected.filter((record) => record.estimatedCostUsd !== null);
+        const incomplete = known.length !== selected.length;
+        const input = known.reduce((sum, record) => sum + (record.inputTokens ?? 0), 0);
+        const output = known.reduce((sum, record) => sum + (record.outputTokens ?? 0), 0);
+        const seconds = known.reduce((sum, record) => sum + (record.audioSeconds ?? 0), 0);
+        const cost = known.reduce((sum, record) => sum + (record.estimatedCostUsd ?? 0), 0);
+        const units =
+          service === 'stt'
+            ? `${seconds.toFixed(1)}s audio`
+            : `${service === 'tts' ? '~' : ''}${input} in / ${service === 'tts' ? '~' : ''}${output} out tokens`;
+        return `${service.toUpperCase()}: ${known.length ? `${units}, ~$${cost.toFixed(6)}` : 'usage unavailable'}${incomplete && known.length ? ' (partial)' : ''}`;
+      })
+      .join(' · ');
   }
 
   function renderMessage(content: string, highlight = '') {
@@ -161,6 +193,9 @@
           onclick={() => onUserMessageClick?.(message.id)}
         >
           {@html renderMessage(message.content)}
+          {#if showUsage && usageFor(message).length}
+            <span class="usage-detail">{usageLabel(usageFor(message))}</span>
+          {/if}
         </button>
       {:else}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -168,13 +203,16 @@
           class="chat-bubble"
           role={onAssistantMessageClick ? 'button' : undefined}
           tabindex={onAssistantMessageClick ? 0 : undefined}
-          onclick={(event) => replayAssistantMessage(event, message.content)}
-          onkeydown={(event) => replayAssistantMessageFromKeyboard(event, message.content)}
+          onclick={(event) => replayAssistantMessage(event, message)}
+          onkeydown={(event) => replayAssistantMessageFromKeyboard(event, message)}
         >
           {@html renderMessage(
             message.content,
             message.id === highlightedMessageId ? speakingSentence : '',
           )}
+          {#if showUsage && usageFor(message).length}
+            <span class="usage-detail">{usageLabel(usageFor(message))}</span>
+          {/if}
         </div>
       {/if}
       {#if reviewMessageId === message.id}
@@ -205,6 +243,14 @@
 </div>
 
 <style>
+  .usage-detail {
+    display: block;
+    margin-top: 8px;
+    font-size: 10px;
+    line-height: 1.4;
+    opacity: 0.75;
+    overflow-wrap: anywhere;
+  }
   .chat-thread {
     display: flex;
     flex: 1;

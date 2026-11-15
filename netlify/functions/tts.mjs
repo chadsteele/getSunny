@@ -1,5 +1,8 @@
 import OpenAI from 'openai';
 
+const instructions =
+  'Speak naturally and conversationally, like a warm, attentive person. Use a normal speaking pace with smooth transitions, natural emphasis, and brief pauses only where punctuation calls for them.';
+
 export default async function tts(request) {
   if (request.method !== 'POST') {
     return Response.json({ error: 'Method not allowed' }, { status: 405 });
@@ -18,12 +21,15 @@ export default async function tts(request) {
       voice: 'nova',
       speed: 1.3,
       input: text.trim(),
-      instructions:
-        'Speak naturally and conversationally, like a warm, attentive person. Use a normal speaking pace with smooth transitions, natural emphasis, and brief pauses only where punctuation calls for them.',
+      instructions,
       response_format: 'mp3',
     });
     return new Response(await speech.arrayBuffer(), {
-      headers: { 'content-type': 'audio/mpeg', 'cache-control': 'no-store' },
+      headers: {
+        'content-type': 'audio/mpeg',
+        'cache-control': 'no-store',
+        'x-sunny-tts-instruction-length': String(instructions.length),
+      },
     });
   } catch (error) {
     console.error('[tts] OpenAI request failed:', error);

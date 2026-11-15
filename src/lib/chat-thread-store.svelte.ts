@@ -1,4 +1,5 @@
 import { logger as console } from './logger';
+import { isUsageRecord, type UsageRecord } from './usage';
 
 export type ChatRole = 'user' | 'assistant' | 'status';
 export type ChatMessage = {
@@ -7,6 +8,8 @@ export type ChatMessage = {
   content: string;
   timestamp?: string;
   deleted?: boolean;
+  usageGroup?: string;
+  usage?: UsageRecord;
 };
 
 const DEFAULT_STORAGE_KEY = 'sunny-chat-thread';
@@ -18,6 +21,8 @@ function isChatMessage(value: unknown): value is ChatMessage {
     typeof message.id === 'number' &&
     typeof message.content === 'string' &&
     (message.deleted === undefined || typeof message.deleted === 'boolean') &&
+    (message.usageGroup === undefined || typeof message.usageGroup === 'string') &&
+    (message.usage === undefined || isUsageRecord(message.usage)) &&
     (message.role === 'user' || message.role === 'assistant' || message.role === 'status')
   );
 }
@@ -62,13 +67,41 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     }
   }
 
-  function add(role: ChatRole, content: string) {
+  function add(role: ChatRole, content: string, usageGroup?: string) {
     const message = content.trim();
     if (!message && role !== 'assistant') return;
     const id = nextMessageId++;
-    messages.push({ id, role, content: message, timestamp: new Date().toISOString() });
+    messages.push({ id, role, content: message, timestamp: new Date().toISOString(), usageGroup });
     persist();
     return id;
+  }
+
+  function addUsage(usage: UsageRecord, usageGroup: string) {
+    const id = nextMessageId++;
+    messages.push({
+      id,
+      role: 'status',
+      content: '',
+      timestamp: new Date().toISOString(),
+      usageGroup,
+      usage,
+    });
+    persist();
+    return id;
+  }
+
+  function updateUsage(messageId: number, usage: UsageRecord) {
+    const message = messages.find(({ id, usage }) => id === messageId && usage !== undefined);
+    if (!message) throw new Error('Cannot update a missing usage record.');
+    message.usage = usage;
+    persist();
+  }
+
+  function setUsageGroup(messageId: number, usageGroup: string) {
+    const message = messages.find(({ id }) => id === messageId);
+    if (!message) throw new Error('Cannot associate usage with a missing message.');
+    message.usageGroup = usageGroup;
+    persist();
   }
 
   function update(messageId: number, content: string) {
@@ -96,8 +129,27 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     get messages() {
       return messages.filter((message) => !message.deleted);
     },
+    get usageRecords() {
+      return messages.flatMap((message) => (message.usage ? [message.usage] : []));
+    },
+    get usageEntries() {
+      return messages.flatMap((message) =>
+        message.usage && message.usageGroup
+          ? [{ group: message.usageGroup, usage: message.usage }]
+          : [],
+      );
+    },
+    usageForGroup(group: string | undefined) {
+      if (!group) return [];
+      return messages.flatMap((message) =>
+        message.usageGroup === group && message.usage ? [message.usage] : [],
+      );
+    },
     restore,
     add,
+    addUsage,
+    updateUsage,
+    setUsageGroup,
     update,
     clear,
     removeMessagesBefore,
