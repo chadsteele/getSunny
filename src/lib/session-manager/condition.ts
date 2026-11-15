@@ -1,4 +1,4 @@
-import type { SessionTiming } from './types';
+import type { SessionTiming } from '../sessions/types';
 
 const MINIMUM_INTERVAL_MS = 18 * 60 * 60 * 1000;
 

@@ -13,7 +13,7 @@ before(async () => {
     setItem: (key, value) => storage.set(key, value),
     removeItem: (key) => storage.delete(key),
   };
-  server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  server = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom' });
   ({ createChatThreadStore } = await server.ssrLoadModule('/src/lib/chat-thread-store.svelte.ts'));
 });
 
@@ -55,4 +55,26 @@ test('review truncation flags removed messages without exposing them', () => {
   assert.equal(retained[0].deleted, undefined);
   assert.equal(retained[1].deleted, true);
   assert.equal(retained[2].deleted, true);
+});
+
+test('strict restore rejects malformed saved chats without overwriting them', () => {
+  storage.set('bad-chat', '{}');
+  const store = createChatThreadStore('bad-chat');
+  assert.throws(() => store.restore(true), /not an array/);
+  assert.equal(storage.get('bad-chat'), '{}');
+});
+
+test('clear retains visible messages when browser storage fails', () => {
+  const store = createChatThreadStore('unavailable-chat');
+  store.add('user', 'keep this message');
+  const setItem = globalThis.localStorage.setItem;
+  globalThis.localStorage.setItem = () => {
+    throw new Error('Storage unavailable');
+  };
+  try {
+    assert.throws(() => store.clear(), /Storage unavailable/);
+    assert.equal(store.messages[0].content, 'keep this message');
+  } finally {
+    globalThis.localStorage.setItem = setItem;
+  }
 });

@@ -1,20 +1,21 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import ChatThread from './ChatThread.svelte';
   import Footer from './Footer.svelte';
   import LogViewer from './LogViewer.svelte';
   import RemoteTTS from './RemoteTTS.svelte';
   import SpeechToText from './SpeechToText.svelte';
   import Sparkle from './Sparkle.svelte';
-  import { createChatThreadStore } from '../lib/chat-thread-store.svelte';
   import { splitSentences } from '../lib/speech-text';
   import { parseSessionReport, reportSystemPrompt, reportTimestamps } from '../lib/session-report';
   import type { BabyStep } from '../lib/sessions/types';
+  import { createSessionChat, sessionPrompts } from '../lib/session-manager';
   import { logger as console } from '../lib/logger';
 
   let { showingLogs, session }: { showingLogs: boolean; session: BabyStep } = $props();
   type Status = 'loading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
-  const chatThread = createChatThreadStore();
+  const sessionChat = createSessionChat(untrack(() => session.path));
+  const chatThread = sessionChat.chat;
   const voiceCapabilityInstruction =
     'Voice capability: You can speak your responses aloud through the voice system. Never say that you cannot speak, talk, or use your voice. When asked to speak, respond naturally and confidently. Do not describe or verbalize emoji characters; omit emoji from spoken responses.';
   let status = $state<Status>('loading');
@@ -76,18 +77,6 @@
     waitingTimer = undefined;
     waitingProgress = 0;
     waitingRemainingMs = maxWaitingMs;
-  }
-
-  function extractOpening(prompt: string) {
-    const startMarker = 'Session Opening Script';
-    const endMarker = 'Session Closing (After Story Consolidation)';
-    const start = prompt.indexOf(startMarker);
-    const end = prompt.indexOf(endMarker);
-    if (start < 0 || end <= start) return prompt;
-    return prompt
-      .slice(start + startMarker.length, end)
-      .trim()
-      .replace(/^"|"$/g, '');
   }
 
   function startMicrophoneVisualizer() {
@@ -418,18 +407,10 @@
     );
   }
 
-  async function loadPrompt() {
-    const conversationPrompt = session.prompt;
-    const openingPrompt = session.intro;
-    if (typeof openingPrompt !== 'string' || !openingPrompt.trim()) {
-      throw new Error('The session opening prompt is not configured.');
-    }
-    if (typeof conversationPrompt !== 'string' || !conversationPrompt.trim()) {
-      throw new Error('The conversation system prompt is not configured.');
-    }
-    const opening = extractOpening(openingPrompt);
-    systemPrompt = `${conversationPrompt}\n\n${voiceCapabilityInstruction}`;
-    if (opening) {
+  async function loadPrompt(playIntro: boolean) {
+    const { opening, prompt } = sessionPrompts(session);
+    systemPrompt = `${prompt}\n\n${voiceCapabilityInstruction}`;
+    if (opening && playIntro) {
       await remoteTts.speak(opening, async () => {
         chatThread.add('assistant', opening);
         await chatThreadView?.scrollToBottomBeforeSpeech();
@@ -440,8 +421,13 @@
 
   onMount(() => {
     const clearChatHistory = () => {
-      chatThread.clear();
-      reviewMessageId = undefined;
+      try {
+        chatThread.clear();
+        reviewMessageId = undefined;
+      } catch (error) {
+        console.error('[Sunny] Unable to delete chat history:', error);
+        reportStatus('Unable to delete chat history from browser storage.', 'error');
+      }
     };
     const restoreChatHistory = () => {
       chatThread.restore();
@@ -449,7 +435,9 @@
     };
     window.addEventListener('sunny-chat-cleared', clearChatHistory);
     window.addEventListener('sunny-chat-restore', restoreChatHistory);
-    void loadPrompt()
+    void (async () => {
+      await loadPrompt(sessionChat.initialize());
+    })()
       .then(() => {
         if (status === 'error') return;
         if (conversationActive && !microphoneMuted) {

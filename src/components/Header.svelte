@@ -95,6 +95,12 @@
         </svg>
         Sign in
       </a>
+      <a href="/Sessions">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h8" />
+        </svg>
+        Sessions
+      </a>
       <a href="#settings" onclick={() => (menuOpen = false)}>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path

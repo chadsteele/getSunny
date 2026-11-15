@@ -35,11 +35,12 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     }
   }
 
-  function restore() {
+  function restore(strict = false) {
     if (typeof localStorage === 'undefined') return;
     try {
       const stored = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as unknown;
-      if (!Array.isArray(stored)) return;
+      if (stored === null) return;
+      if (!Array.isArray(stored)) throw new Error('Saved chat is not an array.');
       messages = stored.filter(isChatMessage).map((message) => {
         if (message.timestamp === undefined) return message;
         if (typeof message.timestamp === 'string' && !Number.isNaN(Date.parse(message.timestamp))) {
@@ -57,6 +58,7 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
       });
     } catch (error) {
       console.warn('[Sunny] Unable to restore chat thread from browser storage:', error);
+      if (strict) throw error;
     }
   }
 
@@ -77,8 +79,10 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
   }
 
   function clear() {
-    messages = messages.map((message) => ({ ...message, deleted: true }));
-    persist();
+    const updated = messages.map((message) => ({ ...message, deleted: true }));
+    if (typeof localStorage === 'undefined') throw new Error('Browser storage is unavailable.');
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+    messages = updated;
   }
 
   function removeMessagesBefore(messageId: number) {

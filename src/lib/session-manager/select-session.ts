@@ -1,4 +1,4 @@
-import type { BabyStep } from './types';
+import type { BabyStep } from '../sessions/types';
 
 export interface SessionProgress {
   path: string;

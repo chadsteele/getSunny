@@ -10,6 +10,10 @@ The current session's `intro` is the spoken opening, and its `prompt` supplies t
 
 [`outline.ts`](./src/lib/sessions/outline.ts) collects the individual baby-step definitions in order, organized as `step/phase/name.ts` using lowercase, hyphenated names. Each definition has its own starter prompt and a shared condition accepting `sessionStart` and `previousSessionEnd` as `Date` values (or `null` for the first session). The condition requires at least 18 hours between the previous session's end and the new session's start. The conditions are not yet connected to session scheduling.
 
+The **Sessions** menu shows the outline and lets users open an enabled session. Previously started sessions can be continued or restarted; restarting marks existing messages deleted rather than erasing them. Each session's chat is stored separately in this browser. Completion tracking is not implemented, so conditions currently receive no prior session end and all existing session conditions allow access.
+
+Session selection, availability, local storage, and chat initialization are managed in [`session-manager/`](./src/lib/session-manager/); the outline and session content remain in [`sessions/`](./src/lib/sessions/).
+
 New chat messages retain their creation timestamp in saved history without displaying it in the chat. Older saved messages do not have recoverable timestamps.
 
 Use **Show logger** in the menu to view the most recent 200 application log entries on the device; **Show chat** returns to the conversation. Logs are kept in memory only and may include conversation text and error details.

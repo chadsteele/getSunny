@@ -15,9 +15,10 @@ before(async () => {
     appType: 'custom',
   });
   steps = (await server.ssrLoadModule('/src/lib/sessions/outline.ts')).default;
-  condition = (await server.ssrLoadModule('/src/lib/sessions/condition.ts'))
+  condition = (await server.ssrLoadModule('/src/lib/session-manager/condition.ts'))
     .startsAtLeast18HoursAfterPreviousSession;
-  selectSession = (await server.ssrLoadModule('/src/lib/sessions/select-session.ts')).selectSession;
+  selectSession = (await server.ssrLoadModule('/src/lib/session-manager/select-session.ts'))
+    .selectSession;
 });
 
 after(async () => {

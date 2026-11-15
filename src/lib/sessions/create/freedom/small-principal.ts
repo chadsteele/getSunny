@@ -1,4 +1,4 @@
-import { startsAtLeast18HoursAfterPreviousSession } from '../../condition';
+import { startsAtLeast18HoursAfterPreviousSession } from '../../../session-manager/condition';
 import type { BabyStep } from '../../types';
 
 export default {
