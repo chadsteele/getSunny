@@ -4,6 +4,7 @@
   import Header from '../components/Header.svelte';
   import VoiceAgent from '../components/VoiceAgent.svelte';
   import { currentSession } from '../lib/session-manager';
+  import { getInitialUid } from '../lib/initial-uid';
   import type { BabyStep } from '../lib/sessions/types';
   import '../styles.css';
 
@@ -14,6 +15,7 @@
 
   onMount(() => {
     try {
+      getInitialUid();
       session = currentSession();
     } catch (error) {
       console.error('[Sunny] Unable to load the current session:', error);
@@ -21,7 +23,6 @@
     }
   });
 </script>
-
 
 <Layout>
   {#if session}

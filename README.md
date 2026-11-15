@@ -22,7 +22,7 @@ Use **Report** in the menu to request a JSON session report from Venice and disp
 
 Reports include `totalTimeSeconds` (elapsed time between the first and last visible messages of the current baby-step chat, including pauses and time away), `totalTokens` (input plus output), and `totalEstimatedCostUsd`. Time is `null` when either timestamp is unavailable or out of order. Restarting clears the visible chat and starts a new elapsed-time span; usage and cost totals continue to include all recorded requests for the baby step, including prior restarts. Token and cost totals may be estimated or incomplete, as indicated by the usage details below.
 
-When starting or restarting a session, Sunny uses the latest saved report for the preceding outline session to generate a personalized spoken and displayed intro. If that session has no report, Sunny uses the report from the most recently active different session (based on its last chat timestamp, or report time if unavailable). Without a saved report, the original intro is used unchanged. Continuing an existing chat does not generate a new intro. Personalized intro generation sends the prior report and current intro to Venice and is included in session usage.
+When starting or restarting a session, Sunny sends the account first name and local settings (when available), the current session details, and the selected prior report to Venice to generate a personalized spoken and displayed intro. The prior report is the latest saved report for the preceding outline session, or, if absent, the report from the most recently active different session (based on its last chat timestamp, or report time if unavailable). Continuing an existing chat does not generate a new intro. This context is also supplied to conversation and report requests; account IDs, report usage and other chat histories are not included. Report generation uses the account first name when no preferred name can be extracted from the conversation. Intro generation is included in session usage.
 
 When reopening an incomplete session at least one hour after its last non-empty transcription, Sunny speaks a brief welcome-back message without adding it to the conversation. A saved report with a satisfaction rating for the current chat marks it complete for this greeting; a restarted chat is treated separately. Speech usage is still included in the session's usage records.
 
@@ -78,6 +78,8 @@ Configure all three keys in Netlify under **Site configuration → Environment v
 
 The **Sign in** menu option opens `/user`. Users enter their first name and email, then sign in or create an account with an emailed one-time code through Stytch. The verified Stytch user ID and first name are stored in browser local storage for other pages to use and the first name is upserted to Supabase after the Stytch session is verified server-side. Signing out clears the current local identity.
 
+Sunny creates a random InitialUID in local storage on first use. It identifies this browser's storage, not a physical device or a person, and remains across sign-outs but is lost if site data is cleared. On sign-in, the browser ID is associated with the verified Stytch user locally and in Supabase; more than one account can be associated with the same browser. It is not a credential and must not be used to authorize access. If the remote save fails, the account page offers a retry. The association does not upload or attach anonymous conversations. Location is not collected or stored.
+
 Set these variables for local development and in Netlify for deployment:
 
 ```bash
@@ -89,9 +91,11 @@ SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
-Only `VITE_STYTCH_PUBLIC_TOKEN` is exposed in the browser bundle. Keep `STYTCH_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` server-side; never use a `VITE_` prefix for either secret. For a live Stytch project, set `STYTCH_API_URL=https://api.stytch.com`. Enable email OTP in Stytch and apply the migration in [`supabase/migrations/`](./supabase/migrations/) to Supabase before saving profiles. The `sunny_profiles` table denies direct access to browser roles; only the Netlify function can write to it.
+Only `VITE_STYTCH_PUBLIC_TOKEN` is exposed in the browser bundle. Keep `STYTCH_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` server-side; never use a `VITE_` prefix for either secret. For a live Stytch project, set `STYTCH_API_URL=https://api.stytch.com`. Enable email OTP in Stytch and apply the migrations in [`supabase/migrations/`](./supabase/migrations/) to Supabase before saving profiles. The `sunny_profiles` and `sunny_browser_associations` tables deny direct access to browser roles; only the Netlify function can write to them.
 
-Conversation history remains in browser storage and is not tied to the signed-in account; signing out does not clear it. **Delete chat history** marks messages as deleted and hides them from the chat and future prompts, but does not erase them from browser storage. Avoid using a shared device if retaining conversation history there is a concern.
+Conversation history and reports are saved in browser storage and synchronized to Supabase under the anonymous browser identity, including existing history on first sync. A separate random credential in browser storage authorizes writes; InitialUID alone is not a credential. The browser retries when synchronization fails or connectivity returns, and reports the failure in the chat. The application must remain open for retries. Clearing browser storage loses the identifier and credential; remote recovery is not currently available. A browser without Web Locks cannot safely synchronize and will report an error.
+
+The browser-to-account association does not grant account access to this anonymous history; consent-based account attachment and cross-device restoration are not yet implemented. Signing out does not clear local or remote history. **Delete chat history** marks messages as deleted and hides them from the chat and future prompts, but does not erase them from browser storage or Supabase. Avoid using a shared device if retaining conversation history there is a concern.
 
 The app is mobile-first and becomes a framed phone layout on larger screens.
 

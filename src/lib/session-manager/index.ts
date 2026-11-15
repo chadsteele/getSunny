@@ -3,6 +3,7 @@ import type { BabyStep } from '../sessions/types';
 import { chatStorageKey, clearRestartRequest, shouldRestartSession } from './session-storage';
 import { hasRatedReportSince } from './reports';
 import type { ChatMessage } from '../chat-thread-store.svelte';
+import { scheduleAnonymousSync } from '../anonymous-sync';
 
 export { selectSession } from './select-session';
 export { priorSessionReport, saveSessionReport } from './reports';
@@ -52,7 +53,7 @@ export function isSessionEnabled(
 }
 
 export function createSessionChat(path: string) {
-  const chat = createChatThreadStore(chatStorageKey(path));
+  const chat = createChatThreadStore(chatStorageKey(path), scheduleAnonymousSync);
   function initialize(): boolean {
     chat.restore(true);
     if (shouldRestartSession(path)) {

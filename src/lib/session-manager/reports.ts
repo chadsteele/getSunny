@@ -1,6 +1,7 @@
 import outline from '../sessions/outline';
 import { parseSessionReport, reportTotals, type SessionReport } from '../session-report';
 import type { summarizeUsage } from '../usage';
+import { scheduleAnonymousSync } from '../anonymous-sync';
 
 export interface SavedSessionReport extends SessionReport {
   firstTimestamp: string | null;
@@ -120,6 +121,7 @@ export function saveSessionReport(path: string, report: SavedSessionReport): voi
   const reports = readReports();
   reports.push({ path, generatedAt: new Date().toISOString(), report });
   localStorage.setItem(reportsKey, JSON.stringify(reports));
+  scheduleAnonymousSync();
 }
 
 export function hasRatedReportSince(path: string, timestamp: string): boolean {

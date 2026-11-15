@@ -27,7 +27,7 @@ function isChatMessage(value: unknown): value is ChatMessage {
   );
 }
 
-export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
+export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY, onPersist?: () => void) {
   let messages = $state<ChatMessage[]>([]);
   let nextMessageId = 0;
 
@@ -35,6 +35,7 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     if (typeof localStorage === 'undefined') return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(messages));
+      onPersist?.();
     } catch (error) {
       console.warn('[Sunny] Unable to persist chat thread to browser storage:', error);
     }
@@ -116,6 +117,7 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
     if (typeof localStorage === 'undefined') throw new Error('Browser storage is unavailable.');
     localStorage.setItem(storageKey, JSON.stringify(updated));
     messages = updated;
+    onPersist?.();
   }
 
   function removeMessagesBefore(messageId: number) {

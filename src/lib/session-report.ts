@@ -1,4 +1,5 @@
-export const reportSystemPrompt = `During the conversation, remember the user's preferred name, their dream,
+export const reportSystemPrompt = `Review the conversation to identify the user's preferred name, the main topics and
+key details they shared,
 their satisfaction rating from 1 to 5, and their feedback about the experience.
 
 When explicitly asked to produce a session report, return only a valid JSON
@@ -11,16 +12,25 @@ object with exactly these fields:
   "comments": string or null
 }
 
-Use only information the user actually provided. Do not invent a name,
-rating, or feedback. Use null when a value is unknown. The summary should
-describe the user's dream and key details; if there is not enough information,
-use an empty string. Do not include markdown fences or explanatory text.`;
+Use only information the user actually provided, including the account name supplied
+as background context. Prefer the name the user requested in the conversation.
+Do not invent a name, rating, or feedback. Use null when a value is unknown.
+Summarize the relevant details the user shared in this session, even if the session
+is incomplete or is not about a dream. Use an empty summary only when the user
+has not shared any relevant details. Do not include markdown fences or explanatory text.`;
 
 export interface SessionReport {
   name: string | null;
   summary: string;
   rank: number | null;
   comments: string | null;
+}
+
+export function withAccountName(
+  report: SessionReport,
+  firstName: string | undefined,
+): SessionReport {
+  return { ...report, name: report.name?.trim() || firstName?.trim() || null };
 }
 
 export function reportTimestamps(messages: readonly ChatMessage[]) {

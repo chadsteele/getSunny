@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseSessionReport, reportTimestamps, reportTotals } from '../src/lib/session-report.ts';
+import {
+  parseSessionReport,
+  reportTimestamps,
+  reportTotals,
+  withAccountName,
+} from '../src/lib/session-report.ts';
 
 test('accepts reports with the required fields and nullable values', () => {
   const report = { name: null, summary: '', rank: null, comments: null };
@@ -31,6 +36,14 @@ test('rejects invalid JSON and reports with incorrect fields or values', () => {
     '{"name":null,"summary":"","rank":null,"comments":[]}',
   ];
   for (const text of invalid) assert.throws(() => parseSessionReport(text));
+});
+
+test('uses the account name only when no preferred name was extracted', () => {
+  const report = { name: null, summary: 'A goal', rank: null, comments: null };
+  assert.equal(withAccountName(report, 'Sam').name, 'Sam');
+  assert.equal(withAccountName({ ...report, name: '  Alex  ' }, 'Sam').name, 'Alex');
+  assert.equal(withAccountName({ ...report, name: '  ' }, 'Sam').name, 'Sam');
+  assert.equal(withAccountName(report, undefined).name, null);
 });
 
 test('reports the timestamps of the first and last messages without inventing missing dates', () => {

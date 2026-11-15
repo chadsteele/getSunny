@@ -3,6 +3,7 @@
   import { StytchClient } from '@stytch/vanilla-js/headless';
   import type { Session } from '@stytch/vanilla-js/headless';
   import Layout from '../../components/Layout.svelte';
+  import { associateInitialUid, getInitialUid } from '../../lib/initial-uid';
   import {
     clearCurrentUserProfile,
     getCurrentUserProfile,
@@ -50,6 +51,7 @@
     isConfigured = true;
     session = stytch.session.getSync();
     try {
+      getInitialUid();
       const pendingFirstName = localStorage.getItem(pendingFirstNameKey);
       const pendingSyncFirstName =
         session && localStorage.getItem(pendingSyncFirstNameKey(session.user_id));
@@ -68,6 +70,7 @@
       showError(error);
     }
     loading = false;
+    if (session && firstName) void retryProfileSave();
     return stytch.session.onChange((nextSession) => {
       session = nextSession;
       if (nextSession) {
@@ -123,6 +126,7 @@
       localStorage.setItem(pendingSyncFirstNameKey(userId), firstName.trim());
       localStorage.removeItem(pendingFirstNameKey);
       saveCurrentUserProfile({ userId, firstName: firstName.trim() });
+      associateInitialUid(userId);
     } catch (error) {
       console.error('[user] Could not save first name locally:', error);
       saveErrors.push('this browser');
@@ -136,7 +140,7 @@
           authorization: `Bearer ${sessionToken}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ firstName: firstName.trim() }),
+        body: JSON.stringify({ firstName: firstName.trim(), initialUid: getInitialUid() }),
       });
       if (!response.headers.get('content-type')?.includes('application/json')) {
         console.error('[user] Profile function returned a non-JSON response:', response.status);

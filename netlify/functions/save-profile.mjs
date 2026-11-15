@@ -31,6 +31,14 @@ export default async function saveProfile(request) {
   if (firstName.length < 1 || firstName.length > 100) {
     return jsonResponse({ error: 'First name must be between 1 and 100 characters.' }, 400);
   }
+  const initialUid = body?.initialUid;
+  if (
+    initialUid !== undefined &&
+    (typeof initialUid !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(initialUid))
+  ) {
+    return jsonResponse({ error: 'Invalid browser identifier.' }, 400);
+  }
 
   const sessionToken = request.headers.get('authorization')?.match(/^Bearer\s+(\S+)$/i)?.[1];
   if (!sessionToken) {
@@ -133,5 +141,33 @@ export default async function saveProfile(request) {
     );
   }
 
+  if (initialUid !== undefined) {
+    let associationResponse;
+    try {
+      associationResponse = await fetch(
+        `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/sunny_browser_associations?on_conflict=initial_uid,user_id`,
+        {
+          method: 'POST',
+          headers: {
+            apikey: supabaseServiceRoleKey,
+            authorization: `Bearer ${supabaseServiceRoleKey}`,
+            'content-type': 'application/json',
+            prefer: 'resolution=ignore-duplicates,return=minimal',
+          },
+          body: JSON.stringify([{ initial_uid: initialUid, user_id: userId }]),
+        },
+      );
+    } catch (error) {
+      console.error('[save-profile] Browser association request failed:', error);
+      return jsonResponse({ error: 'Could not associate this browser with your account.' }, 502);
+    }
+    if (!associationResponse.ok) {
+      console.error('[save-profile] Browser association failed:', associationResponse.status);
+      return jsonResponse(
+        { error: 'Could not associate this browser with your account. Please retry.' },
+        502,
+      );
+    }
+  }
   return jsonResponse({ user_id: userId }, 200);
 }
