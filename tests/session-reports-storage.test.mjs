@@ -107,3 +107,55 @@ test('derives totals for older saved reports and preserves newly saved totals', 
   assert.equal(stored.totalTokens, 40);
   assert.equal(stored.totalEstimatedCostUsd, 0.02);
 });
+
+test('welcomes back incomplete sessions after one hour since the latest non-empty transcription', () => {
+  memory.clear();
+  const path = outline[0].path;
+  const messages = [
+    { id: 0, role: 'assistant', content: 'Hello', timestamp: '2026-01-01T10:00:00Z' },
+    { id: 1, role: 'user', content: 'I have a goal', timestamp: '2026-01-01T10:05:00Z' },
+    { id: 2, role: 'status', content: '', timestamp: '2026-01-01T10:15:00Z' },
+    { id: 3, role: 'assistant', content: 'Tell me more', timestamp: '2026-01-01T10:16:00Z' },
+  ];
+  assert.equal(
+    manager.shouldWelcomeBack(path, messages, new Date('2026-01-01T11:04:59.999Z')),
+    false,
+  );
+  assert.equal(manager.shouldWelcomeBack(path, messages, new Date('2026-01-01T11:05:00Z')), true);
+  assert.equal(
+    manager.shouldWelcomeBack(path, messages.slice(0, 1), new Date('2026-01-02T00:00:00Z')),
+    false,
+  );
+  assert.equal(
+    manager.shouldWelcomeBack(path, [{ ...messages[1], timestamp: undefined }], new Date()),
+    false,
+  );
+  assert.equal(
+    manager.shouldWelcomeBack(path, [messages[0], { ...messages[1], deleted: true }], new Date()),
+    false,
+  );
+  assert.equal(manager.shouldWelcomeBack(path, messages, new Date('2026-01-01T09:00:00Z')), false);
+
+  const recent = [
+    ...messages,
+    { id: 4, role: 'user', content: 'Another thought', timestamp: '2026-01-01T10:30:00Z' },
+  ];
+  assert.equal(manager.shouldWelcomeBack(path, recent, new Date('2026-01-01T11:05:00Z')), false);
+  manager.saveSessionReport(path, report('In progress', '2026-01-01T10:16:00Z'));
+  assert.equal(manager.shouldWelcomeBack(path, messages, new Date('2026-01-01T11:05:00Z')), true);
+
+  const completed = report('Done', '2026-01-01T10:16:00Z');
+  completed.rank = 4;
+  manager.saveSessionReport(path, completed);
+  assert.equal(manager.shouldWelcomeBack(path, messages, new Date('2026-01-01T11:05:00Z')), false);
+  const resumed = [
+    ...messages,
+    { id: 4, role: 'user', content: 'One more thing', timestamp: '2026-01-01T11:20:00Z' },
+  ];
+  assert.equal(manager.shouldWelcomeBack(path, resumed, new Date('2026-01-01T12:20:00Z')), false);
+  const restarted = [
+    { id: 5, role: 'assistant', content: 'Starting again', timestamp: '2026-01-02T10:00:00Z' },
+    { id: 6, role: 'user', content: 'New goal', timestamp: '2026-01-02T10:05:00Z' },
+  ];
+  assert.equal(manager.shouldWelcomeBack(path, restarted, new Date('2026-01-02T11:05:00Z')), true);
+});

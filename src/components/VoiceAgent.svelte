@@ -19,6 +19,7 @@
     priorSessionReport,
     saveSessionReport,
     sessionPrompts,
+    shouldWelcomeBack,
     type SessionReportEntry,
   } from '../lib/session-manager';
   import { logger as console } from '../lib/logger';
@@ -403,6 +404,11 @@
         await chatThreadView?.scrollToBottomBeforeSpeech();
         return true;
       });
+    } else if (!playIntro && shouldWelcomeBack(session.path, chatThread.messages, new Date())) {
+      await speaker.speak(
+        "Welcome back! I'm glad you're here. Let's continue.",
+        crypto.randomUUID(),
+      );
     }
   }
 

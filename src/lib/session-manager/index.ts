@@ -1,6 +1,8 @@
 import { createChatThreadStore } from '../chat-thread-store.svelte';
 import type { BabyStep } from '../sessions/types';
 import { chatStorageKey, clearRestartRequest, shouldRestartSession } from './session-storage';
+import { hasRatedReportSince } from './reports';
+import type { ChatMessage } from '../chat-thread-store.svelte';
 
 export { selectSession } from './select-session';
 export { priorSessionReport, saveSessionReport } from './reports';
@@ -60,6 +62,26 @@ export function createSessionChat(path: string) {
     return !chat.messages.some((message) => message.role !== 'status');
   }
   return { chat, initialize };
+}
+
+export function shouldWelcomeBack(
+  path: string,
+  messages: readonly ChatMessage[],
+  now: Date,
+): boolean {
+  if (!Number.isFinite(now.getTime())) throw new Error('Invalid current time.');
+  const lastTranscript = messages.findLast(
+    (message) => !message.deleted && message.role === 'user' && message.content.trim(),
+  );
+  if (!lastTranscript?.timestamp) return false;
+  const lastSpeech = Date.parse(lastTranscript.timestamp);
+  if (!Number.isFinite(lastSpeech)) throw new Error('Invalid transcription timestamp.');
+  if (now.getTime() - lastSpeech < 60 * 60 * 1000) return false;
+  const firstMessage = messages.find(
+    (message) => !message.deleted && message.role !== 'status' && message.content.trim(),
+  );
+  if (!firstMessage?.timestamp) return false;
+  return !hasRatedReportSince(path, firstMessage.timestamp);
 }
 
 export function sessionPrompts(session: BabyStep) {

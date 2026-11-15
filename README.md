@@ -24,6 +24,8 @@ Reports include `totalTimeSeconds` (elapsed time between the first and last visi
 
 When starting or restarting a session, Sunny uses the latest saved report for the preceding outline session to generate a personalized spoken and displayed intro. If that session has no report, Sunny uses the report from the most recently active different session (based on its last chat timestamp, or report time if unavailable). Without a saved report, the original intro is used unchanged. Continuing an existing chat does not generate a new intro. Personalized intro generation sends the prior report and current intro to Venice and is included in session usage.
 
+When reopening an incomplete session at least one hour after its last non-empty transcription, Sunny speaks a brief welcome-back message without adding it to the conversation. A saved report with a satisfaction rating for the current chat marks it complete for this greeting; a restarted chat is treated separately. Speech usage is still included in the session's usage records.
+
 Usage records are saved alongside the session chat in browser storage, including requests
 for replays and reports and requests associated with deleted or restarted chats. On localhost,
 each chat bubble displays its associated usage and estimated cost; the session report contains

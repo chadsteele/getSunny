@@ -122,6 +122,22 @@ export function saveSessionReport(path: string, report: SavedSessionReport): voi
   localStorage.setItem(reportsKey, JSON.stringify(reports));
 }
 
+export function hasRatedReportSince(path: string, timestamp: string): boolean {
+  if (!outline.some((session) => session.path === path)) {
+    throw new Error('The current session is not in the outline.');
+  }
+  const sessionStart = Date.parse(timestamp);
+  if (!Number.isFinite(sessionStart)) throw new Error('Invalid session timestamp.');
+  return readReports().some(
+    (entry) =>
+      entry.path === path &&
+      entry.report.rank !== null &&
+      entry.report.lastTimestamp !== null &&
+      Date.parse(entry.report.lastTimestamp) >= sessionStart &&
+      Date.parse(entry.generatedAt) >= sessionStart,
+  );
+}
+
 export function priorSessionReport(path: string): SessionReportEntry | undefined {
   const index = outline.findIndex((session) => session.path === path);
   if (index < 0) throw new Error('The current session is not in the outline.');
