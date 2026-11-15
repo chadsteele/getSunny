@@ -7,7 +7,7 @@ let render;
 let VoiceAgent;
 let Microphone;
 let Speaker;
-let ProgressIndicator;
+let Footer;
 let outline;
 
 before(async () => {
@@ -16,8 +16,7 @@ before(async () => {
   VoiceAgent = (await server.ssrLoadModule('/src/components/VoiceAgent.svelte')).default;
   Microphone = (await server.ssrLoadModule('/src/components/Microphone.svelte')).default;
   Speaker = (await server.ssrLoadModule('/src/components/Speaker.svelte')).default;
-  ProgressIndicator = (await server.ssrLoadModule('/src/components/ProgressIndicator.svelte'))
-    .default;
+  Footer = (await server.ssrLoadModule('/src/components/Footer.svelte')).default;
   outline = (await server.ssrLoadModule('/src/lib/sessions/outline.ts')).default;
 });
 
@@ -68,12 +67,12 @@ test('progress indicator renders status and the thinking progress bar only when 
     speakerControl: () => {},
     microphoneControl: () => {},
   };
-  const visible = render(ProgressIndicator, { props: { ...props, showProgress: true } }).body;
+  const visible = render(Footer, { props: { ...props, showProgress: true } }).body;
   assert.match(visible, /role="progressbar" aria-label="Sunny is thinking\.\.\."/);
   assert.match(visible, /aria-valuenow="0"/);
   assert.match(visible, /0% · 1:00 remaining/);
   assert.match(visible, /class="status-area[^"]*" aria-live="polite">Working/);
-  const hidden = render(ProgressIndicator, { props: { ...props, showProgress: false } }).body;
+  const hidden = render(Footer, { props: { ...props, showProgress: false } }).body;
   assert.doesNotMatch(hidden, /role="progressbar"/);
   assert.match(hidden, />Working</);
 });

@@ -4,7 +4,7 @@
   import LogViewer from './LogViewer.svelte';
   import Microphone from './Microphone.svelte';
   import Speaker from './Speaker.svelte';
-  import ProgressIndicator from './ProgressIndicator.svelte';
+  import Footer from './Footer.svelte';
   import Sparkle from './Sparkle.svelte';
   import { splitSentences } from '../lib/speech-text';
   import { parseSessionReport, reportSystemPrompt, reportTimestamps } from '../lib/session-report';
@@ -419,11 +419,7 @@
       />
     {/if}
   </div>
-  <ProgressIndicator
-    title="Sunny is thinking..."
-    status={statusMessage}
-    showProgress={status === 'thinking'}
-  >
+  <Footer title="Sunny is thinking..." status={statusMessage} showProgress={status === 'thinking'}>
     {#snippet speakerControl()}
       <Speaker
         bind:this={speaker}
@@ -451,7 +447,7 @@
         onError={handleSpeechError}
       />
     {/snippet}
-  </ProgressIndicator>
+  </Footer>
 </main>
 
 <style>
