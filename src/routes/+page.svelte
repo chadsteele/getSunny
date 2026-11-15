@@ -2,9 +2,11 @@
   import Layout from '../components/Layout.svelte';
   import Header from '../components/Header.svelte';
   import VoiceAgent from '../components/VoiceAgent.svelte';
+  import outline from '../lib/sessions/outline';
   import '../styles.css';
 
   let showingLogs = $state(false);
+  const currentSession = outline[0];
   let voiceAgent: VoiceAgent;
 </script>
 
@@ -17,6 +19,7 @@
 
 <Layout>
   <Header
+    session={currentSession}
     {showingLogs}
     onToggleView={() => (showingLogs = !showingLogs)}
     onReport={() => {
@@ -24,5 +27,5 @@
       void voiceAgent.generateReport();
     }}
   />
-  <VoiceAgent bind:this={voiceAgent} {showingLogs} />
+  <VoiceAgent bind:this={voiceAgent} {showingLogs} session={currentSession} />
 </Layout>

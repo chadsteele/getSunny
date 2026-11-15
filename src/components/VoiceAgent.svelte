@@ -7,12 +7,12 @@
   import SpeechToText from './SpeechToText.svelte';
   import Sparkle from './Sparkle.svelte';
   import { createChatThreadStore } from '../lib/chat-thread-store.svelte';
-  import prompts from '../lib/prompts';
   import { splitSentences } from '../lib/speech-text';
   import { parseSessionReport, reportSystemPrompt, reportTimestamps } from '../lib/session-report';
+  import type { BabyStep } from '../lib/sessions/types';
   import { logger as console } from '../lib/logger';
 
-  let { showingLogs }: { showingLogs: boolean } = $props();
+  let { showingLogs, session }: { showingLogs: boolean; session: BabyStep } = $props();
   type Status = 'loading' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
   const chatThread = createChatThreadStore();
   const voiceCapabilityInstruction =
@@ -419,7 +419,8 @@
   }
 
   async function loadPrompt() {
-    const [openingPrompt, conversationPrompt] = prompts;
+    const conversationPrompt = session.prompt;
+    const openingPrompt = session.intro;
     if (typeof openingPrompt !== 'string' || !openingPrompt.trim()) {
       throw new Error('The session opening prompt is not configured.');
     }

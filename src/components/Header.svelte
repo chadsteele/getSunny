@@ -1,14 +1,16 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
+  import type { BabyStep } from '../lib/sessions/types';
 
   interface Props {
+    session: BabyStep;
     showingLogs: boolean;
     onToggleView: () => void;
     onReport: () => void;
   }
 
-  let { showingLogs, onToggleView, onReport }: Props = $props();
+  let { session, showingLogs, onToggleView, onReport }: Props = $props();
   let menuOpen = $state(false);
   let deleteConfirmOpen = $state(false);
   let menuButton: HTMLButtonElement;
@@ -43,7 +45,6 @@
   }
 
   function deleteChatHistory() {
-    localStorage.removeItem('sunny-chat-thread');
     window.dispatchEvent(new CustomEvent('sunny-chat-cleared'));
     deleteConfirmOpen = false;
   }
@@ -69,7 +70,7 @@
     <span></span><span></span><span></span>
   </button>
   <div class="brand"><span></span></div>
-  <div class="step">Step 1: Dreaming</div>
+  <div class="step">{session.phase}: {session.name}</div>
 </header>
 
 <div class="drawer-layer" class:open={menuOpen} inert={!menuOpen}>
@@ -159,7 +160,8 @@
     >
       <h2 id="delete-chat-title">Delete chat history?</h2>
       <p id="delete-chat-description">
-        All saved conversation history will be permanently deleted. This cannot be undone.
+        Conversation history will be marked as deleted and hidden from the chat and future prompts.
+        It will remain in storage.
       </p>
       <div class="modal-actions">
         <button type="button" class="cancel-button" onclick={() => (deleteConfirmOpen = false)}>

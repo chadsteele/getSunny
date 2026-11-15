@@ -1,7 +1,13 @@
 import { logger as console } from './logger';
 
 export type ChatRole = 'user' | 'assistant' | 'status';
-export type ChatMessage = { id: number; role: ChatRole; content: string; timestamp?: string };
+export type ChatMessage = {
+  id: number;
+  role: ChatRole;
+  content: string;
+  timestamp?: string;
+  deleted?: boolean;
+};
 
 const DEFAULT_STORAGE_KEY = 'sunny-chat-thread';
 
@@ -11,6 +17,7 @@ function isChatMessage(value: unknown): value is ChatMessage {
   return (
     typeof message.id === 'number' &&
     typeof message.content === 'string' &&
+    (message.deleted === undefined || typeof message.deleted === 'boolean') &&
     (message.role === 'user' || message.role === 'assistant' || message.role === 'status')
   );
 }
@@ -70,20 +77,20 @@ export function createChatThreadStore(storageKey = DEFAULT_STORAGE_KEY) {
   }
 
   function clear() {
-    messages = [];
-    nextMessageId = 0;
-    if (typeof localStorage === 'undefined') return;
-    localStorage.removeItem(storageKey);
+    messages = messages.map((message) => ({ ...message, deleted: true }));
+    persist();
   }
 
   function removeMessagesBefore(messageId: number) {
-    messages = messages.filter((message) => message.id < messageId);
+    messages = messages.map((message) =>
+      message.id >= messageId ? { ...message, deleted: true } : message,
+    );
     persist();
   }
 
   return {
     get messages() {
-      return messages;
+      return messages.filter((message) => !message.deleted);
     },
     restore,
     add,

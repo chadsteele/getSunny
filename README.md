@@ -6,7 +6,9 @@ The voice conversation loop in [`VoiceAgent.svelte`](./src/components/VoiceAgent
 
 Speech audio is prefetched two sentences ahead and played in order. The current OpenAI TTS model is deprecated and scheduled for shutdown on January 6, 2027; OpenAI's replacement requires a Realtime API migration.
 
-The first entry in [`prompts.ts`](./src/lib/prompts.ts) is the spoken opening; the second is the conversation system prompt sent with Venice requests.
+The current session's `intro` is the spoken opening, and its `prompt` supplies the conversation system prompt sent with Venice requests. The current session is the first outline entry until session progression is connected.
+
+[`outline.ts`](./src/lib/sessions/outline.ts) collects the individual baby-step definitions in order, organized as `step/phase/name.ts` using lowercase, hyphenated names. Each definition has its own starter prompt and a shared condition accepting `sessionStart` and `previousSessionEnd` as `Date` values (or `null` for the first session). The condition requires at least 18 hours between the previous session's end and the new session's start. The conditions are not yet connected to session scheduling.
 
 New chat messages retain their creation timestamp in saved history without displaying it in the chat. Older saved messages do not have recoverable timestamps.
 
@@ -57,7 +59,7 @@ SUPABASE_SERVICE_ROLE_KEY=...
 
 Only `VITE_STYTCH_PUBLIC_TOKEN` is exposed in the browser bundle. Keep `STYTCH_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` server-side; never use a `VITE_` prefix for either secret. For a live Stytch project, set `STYTCH_API_URL=https://api.stytch.com`. Enable email OTP in Stytch and apply the migration in [`supabase/migrations/`](./supabase/migrations/) to Supabase before saving profiles. The `sunny_profiles` table denies direct access to browser roles; only the Netlify function can write to it.
 
-Conversation history remains in browser storage and is not tied to the signed-in account; signing out does not clear it. On a shared device, use **Delete chat history** before leaving.
+Conversation history remains in browser storage and is not tied to the signed-in account; signing out does not clear it. **Delete chat history** marks messages as deleted and hides them from the chat and future prompts, but does not erase them from browser storage. Avoid using a shared device if retaining conversation history there is a concern.
 
 The app is mobile-first and becomes a framed phone layout on larger screens.
 
@@ -73,6 +75,8 @@ To run the report validation tests with Node.js 22.6 or newer:
 ```bash
 node --experimental-strip-types --test tests/session-report.test.mjs
 ```
+
+Run the baby-step definition and timing tests with `node --test tests/baby-steps.test.mjs`.
 
 ## Publish to GitHub
 
