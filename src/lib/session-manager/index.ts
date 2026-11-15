@@ -3,6 +3,8 @@ import type { BabyStep } from '../sessions/types';
 import { chatStorageKey, clearRestartRequest, shouldRestartSession } from './session-storage';
 
 export { selectSession } from './select-session';
+export { priorSessionReport, saveSessionReport } from './reports';
+export type { SavedSessionReport, SessionReportEntry } from './reports';
 export type { SessionProgress, SessionSelection } from './select-session';
 export { startsAtLeast18HoursAfterPreviousSession } from './condition';
 export {

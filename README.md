@@ -18,7 +18,9 @@ New chat messages retain their creation timestamp in saved history without displ
 
 Use **Show logger** in the menu to view the most recent 200 application log entries on the device; **Show chat** returns to the conversation. Logs are kept in memory only and may include conversation text and error details.
 
-Use **Report** in the menu to request a JSON session report from Venice and display it in the logger without speech. The report uses the conversation history available at the time of the request, and can contain sensitive conversation details. The `firstTimestamp` and `lastTimestamp` fields are the stored UTC timestamps of the first and last messages in that history; they are `null` when unavailable. Its generated fields and rating are validated before logging; errors appear in the logger.
+Use **Report** in the menu to request a JSON session report from Venice and display it in the logger without speech. Reports are saved in browser local storage and can contain sensitive conversation details. The `firstTimestamp` and `lastTimestamp` fields are the stored UTC timestamps of the first and last messages in that history; they are `null` when unavailable. Its generated fields and rating are validated before saving and logging; errors appear in the logger. Reports previously printed only to the logger cannot be recovered.
+
+When starting or restarting a session, Sunny uses the latest saved report for the preceding outline session to generate a personalized spoken and displayed intro. If that session has no report, Sunny uses the report from the most recently active different session (based on its last chat timestamp, or report time if unavailable). Without a saved report, the original intro is used unchanged. Continuing an existing chat does not generate a new intro. Personalized intro generation sends the prior report and current intro to Venice and is included in session usage.
 
 Usage records are saved alongside the session chat in browser storage, including requests
 for replays and reports and requests associated with deleted or restarted chats. On localhost,
