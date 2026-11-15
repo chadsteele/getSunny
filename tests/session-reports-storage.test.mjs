@@ -79,3 +79,31 @@ test('missing dates fall back to report time and malformed storage is surfaced',
   assert.throws(() => manager.saveSessionReport(outline[0].path, report('new')), /invalid/);
   assert.equal(memory.get('sunny-session-reports'), '{}');
 });
+
+test('derives totals for older saved reports and preserves newly saved totals', () => {
+  memory.clear();
+  const old = report('legacy', '2024-01-01T00:05:00Z');
+  old.firstTimestamp = '2024-01-01T00:00:00Z';
+  old.usage.inputTokens = 30;
+  old.usage.outputTokens = 10;
+  old.usage.estimatedCostUsd = 0.02;
+  memory.set(
+    'sunny-session-reports',
+    JSON.stringify([
+      {
+        path: outline[0].path,
+        generatedAt: '2024-01-01T00:05:00Z',
+        report: old,
+      },
+    ]),
+  );
+  const retrieved = manager.priorSessionReport(outline[1].path).report;
+  assert.equal(retrieved.totalTimeSeconds, 300);
+  assert.equal(retrieved.totalTokens, 40);
+  assert.equal(retrieved.totalEstimatedCostUsd, 0.02);
+  manager.saveSessionReport(outline[0].path, retrieved);
+  const stored = JSON.parse(memory.get('sunny-session-reports'))[1].report;
+  assert.equal(stored.totalTimeSeconds, 300);
+  assert.equal(stored.totalTokens, 40);
+  assert.equal(stored.totalEstimatedCostUsd, 0.02);
+});

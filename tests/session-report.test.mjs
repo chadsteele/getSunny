@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseSessionReport, reportTimestamps } from '../src/lib/session-report.ts';
+import { parseSessionReport, reportTimestamps, reportTotals } from '../src/lib/session-report.ts';
 
 test('accepts reports with the required fields and nullable values', () => {
   const report = { name: null, summary: '', rank: null, comments: null };
@@ -41,6 +41,7 @@ test('reports the timestamps of the first and last messages without inventing mi
     firstTimestamp: first.timestamp,
     lastTimestamp: last.timestamp,
   });
+
   assert.deepEqual(reportTimestamps([old, last]), {
     firstTimestamp: null,
     lastTimestamp: last.timestamp,
@@ -54,4 +55,33 @@ test('reports the timestamps of the first and last messages without inventing mi
     lastTimestamp: first.timestamp,
   });
   assert.deepEqual(reportTimestamps([]), { firstTimestamp: null, lastTimestamp: null });
+});
+
+test('reports elapsed baby-step time and totals without inventing missing timestamps', () => {
+  const usage = { inputTokens: 125, outputTokens: 75, estimatedCostUsd: 0.0123 };
+  assert.deepEqual(
+    reportTotals(
+      { firstTimestamp: '2024-01-01T10:00:00Z', lastTimestamp: '2024-01-01T10:03:30Z' },
+      usage,
+    ),
+    { totalTimeSeconds: 210, totalTokens: 200, totalEstimatedCostUsd: 0.0123 },
+  );
+  assert.equal(
+    reportTotals({ firstTimestamp: null, lastTimestamp: null }, usage).totalTimeSeconds,
+    null,
+  );
+  assert.equal(
+    reportTotals(
+      { firstTimestamp: '2024-01-02T00:00:00Z', lastTimestamp: '2024-01-01T00:00:00Z' },
+      usage,
+    ).totalTimeSeconds,
+    null,
+  );
+  assert.equal(
+    reportTotals(
+      { firstTimestamp: '2024-01-01T00:00:00Z', lastTimestamp: '2024-01-01T00:00:00Z' },
+      usage,
+    ).totalTimeSeconds,
+    0,
+  );
 });

@@ -7,7 +7,12 @@
   import Footer from './Footer.svelte';
   import Sparkle from './Sparkle.svelte';
   import { splitSentences } from '../lib/speech-text';
-  import { parseSessionReport, reportSystemPrompt, reportTimestamps } from '../lib/session-report';
+  import {
+    parseSessionReport,
+    reportSystemPrompt,
+    reportTimestamps,
+    reportTotals,
+  } from '../lib/session-report';
   import type { BabyStep } from '../lib/sessions/types';
   import {
     createSessionChat,
@@ -102,10 +107,12 @@
         (chunk) => (text += chunk),
         (usage) => chatThread.updateUsage(usageId, usage),
       );
+      const usage = summarizeUsage(chatThread.usageRecords);
       const report = {
         ...parseSessionReport(text),
         ...timestamps,
-        usage: summarizeUsage(chatThread.usageRecords),
+        ...reportTotals(timestamps, usage),
+        usage,
       };
       saveSessionReport(session.path, report);
       console.log('[Sunny] Session report:\n' + JSON.stringify(report, null, 2));

@@ -1,11 +1,14 @@
 import outline from '../sessions/outline';
-import { parseSessionReport, type SessionReport } from '../session-report';
+import { parseSessionReport, reportTotals, type SessionReport } from '../session-report';
 import type { summarizeUsage } from '../usage';
 
 export interface SavedSessionReport extends SessionReport {
   firstTimestamp: string | null;
   lastTimestamp: string | null;
   usage: ReturnType<typeof summarizeUsage>;
+  totalTimeSeconds: number | null;
+  totalTokens: number;
+  totalEstimatedCostUsd: number;
 }
 
 export interface SessionReportEntry {
@@ -101,6 +104,10 @@ function readReports(): SessionReportEntry[] {
         firstTimestamp: report.firstTimestamp,
         lastTimestamp: report.lastTimestamp,
         usage: report.usage,
+        ...reportTotals(
+          { firstTimestamp: report.firstTimestamp, lastTimestamp: report.lastTimestamp },
+          report.usage,
+        ),
       },
     };
   });

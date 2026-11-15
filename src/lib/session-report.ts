@@ -30,6 +30,25 @@ export function reportTimestamps(messages: readonly ChatMessage[]) {
   };
 }
 
+export function reportTotals(
+  timestamps: { firstTimestamp: string | null; lastTimestamp: string | null },
+  usage: Pick<
+    ReturnType<typeof summarizeUsage>,
+    'inputTokens' | 'outputTokens' | 'estimatedCostUsd'
+  >,
+) {
+  const first = timestamps.firstTimestamp === null ? NaN : Date.parse(timestamps.firstTimestamp);
+  const last = timestamps.lastTimestamp === null ? NaN : Date.parse(timestamps.lastTimestamp);
+  return {
+    totalTimeSeconds:
+      Number.isFinite(first) && Number.isFinite(last) && last >= first
+        ? (last - first) / 1000
+        : null,
+    totalTokens: usage.inputTokens + usage.outputTokens,
+    totalEstimatedCostUsd: usage.estimatedCostUsd,
+  };
+}
+
 export function parseSessionReport(text: string): SessionReport {
   let value: unknown;
   try {
@@ -67,3 +86,4 @@ export function parseSessionReport(text: string): SessionReport {
   };
 }
 import type { ChatMessage } from './chat-thread-store.svelte';
+import type { summarizeUsage } from './usage';
