@@ -2,24 +2,30 @@
   import { onMount } from 'svelte';
   import { normalizeForDisplay, normalizeForSpeech, splitSentences } from '../lib/speech-text';
   import { logger as console } from '../lib/logger';
+  import AudioControl from './AudioControl.svelte';
 
   interface Props {
     muted: boolean;
     onSpeakingSentence?: (sentence: string, keepBottom: boolean) => void;
     onSpeakingEnd?: () => void;
-    onIntensityChange?: (intensity: number) => void;
+    onVisualizerStart: (audio: HTMLAudioElement) => void;
+    onVisualizerStop: () => void;
+    onToggle: () => void;
     onError?: (error: unknown) => void;
   }
 
-  let { muted, onSpeakingSentence, onSpeakingEnd, onIntensityChange, onError }: Props = $props();
+  let {
+    muted,
+    onSpeakingSentence,
+    onSpeakingEnd,
+    onVisualizerStart,
+    onVisualizerStop,
+    onToggle,
+    onError,
+  }: Props = $props();
 
   let audio: HTMLAudioElement | undefined;
   let audioUrl: string | undefined;
-  let audioContext: AudioContext | undefined;
-  let analyser: AnalyserNode | undefined;
-  let audioSource: MediaElementAudioSourceNode | undefined;
-  let audioData: Uint8Array<ArrayBuffer> | undefined;
-  let animationFrame: number | undefined;
   let speechQueue = Promise.resolve();
   let cancelled = false;
   let playbackVersion = 0;
@@ -62,46 +68,6 @@
     speechJobs = [];
   }
 
-  function updateIntensity() {
-    if (!analyser || !audioData) {
-      animationFrame = undefined;
-      onIntensityChange?.(0.18);
-      return;
-    }
-    analyser.getByteTimeDomainData(audioData);
-    let sum = 0;
-    for (const sample of audioData) {
-      const amplitude = (sample - 128) / 128;
-      sum += amplitude * amplitude;
-    }
-    const level = Math.sqrt(sum / audioData.length);
-    onIntensityChange?.(Math.min(0.95, Math.max(0.18, level * 7)));
-    animationFrame = requestAnimationFrame(updateIntensity);
-  }
-
-  function startVisualizer() {
-    if (!audio) return;
-    audioContext ??= new AudioContext();
-    if (!analyser) {
-      analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256;
-      audioData = new Uint8Array(analyser.fftSize);
-      audioSource ??= audioContext.createMediaElementSource(audio);
-      audioSource.connect(analyser);
-      analyser.connect(audioContext.destination);
-    }
-    void audioContext.resume();
-    if (animationFrame === undefined) {
-      animationFrame = requestAnimationFrame(updateIntensity);
-    }
-  }
-
-  function stopVisualizer() {
-    if (animationFrame !== undefined) cancelAnimationFrame(animationFrame);
-    animationFrame = undefined;
-    onIntensityChange?.(0.18);
-  }
-
   function unlockPlayback() {
     playbackUnlocked = true;
     if (!pendingPlaybackResolve || !audio) return;
@@ -138,7 +104,7 @@
     const keepBottom = (await onReady?.()) === true;
     if (muted || requestVersion !== playbackVersion) return;
     onSpeakingSentence?.(text, keepBottom);
-    startVisualizer();
+    onVisualizerStart(audio);
     try {
       try {
         await audio.play();
@@ -170,7 +136,7 @@
       });
     } finally {
       onSpeakingEnd?.();
-      stopVisualizer();
+      onVisualizerStop();
     }
   }
 
@@ -223,7 +189,7 @@
     pendingPlaybackResolve = undefined;
     audio?.pause();
     onSpeakingEnd?.();
-    stopVisualizer();
+    onVisualizerStop();
   }
 
   onMount(() => {
@@ -231,10 +197,16 @@
     return () => {
       document.removeEventListener('pointerdown', unlockPlayback);
       stop();
-      audioSource?.disconnect();
-      analyser?.disconnect();
-      void audioContext?.close();
       if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   });
 </script>
+
+<AudioControl {muted} label={muted ? 'Unmute speaker' : 'Mute speaker'} onclick={onToggle}>
+  <path d="M4 10v4h4l5 4V6l-5 4H4Z" />
+  {#if !muted}
+    <path d="M16 9a5 5 0 0 1 0 6M18.5 6.5a8.5 8.5 0 0 1 0 11" />
+  {:else}
+    <path class="slash" d="m4 4 16 16" />
+  {/if}
+</AudioControl>

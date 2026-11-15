@@ -1,21 +1,112 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+
   interface Props {
-    intensity?: number;
+    hidden?: boolean;
+    onMicrophoneLevel: (level: number) => void;
   }
 
-  let { intensity = 0.18 }: Props = $props();
+  let { hidden = false, onMicrophoneLevel }: Props = $props();
+  let intensity = $state(0.18);
   let scale = $derived(0.06 + intensity * 0.94);
   let glow = $derived(0.02 + intensity * 0.78);
+  let microphoneContext: AudioContext | undefined;
+  let microphoneAnalyser: AnalyserNode | undefined;
+  let microphoneData: Uint8Array<ArrayBuffer> | undefined;
+  let microphoneFrame: number | undefined;
+  let speakerContext: AudioContext | undefined;
+  let speakerAnalyser: AnalyserNode | undefined;
+  let speakerSource: MediaElementAudioSourceNode | undefined;
+  let speakerData: Uint8Array<ArrayBuffer> | undefined;
+  let speakerFrame: number | undefined;
+
+  function level(analyser: AnalyserNode, data: Uint8Array<ArrayBuffer>): number {
+    analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (const sample of data) {
+      const amplitude = (sample - 128) / 128;
+      sum += amplitude * amplitude;
+    }
+    return Math.sqrt(sum / data.length);
+  }
+
+  function updateMicrophone() {
+    if (!microphoneAnalyser || !microphoneData) return;
+    const current = level(microphoneAnalyser, microphoneData);
+    onMicrophoneLevel(current);
+    intensity = Math.min(0.9, Math.max(0.18, current * 4));
+    microphoneFrame = requestAnimationFrame(updateMicrophone);
+  }
+
+  export function prepareMicrophone() {
+    intensity = 0.45;
+  }
+
+  export function stopMicrophone() {
+    if (microphoneFrame !== undefined) cancelAnimationFrame(microphoneFrame);
+    microphoneFrame = undefined;
+    microphoneAnalyser = undefined;
+    microphoneData = undefined;
+    intensity = 0.18;
+    void microphoneContext?.close();
+    microphoneContext = undefined;
+  }
+
+  export function startMicrophone(stream: MediaStream) {
+    if (microphoneAnalyser) return;
+    microphoneContext = new AudioContext();
+    microphoneAnalyser = microphoneContext.createAnalyser();
+    microphoneAnalyser.fftSize = 256;
+    microphoneData = new Uint8Array(microphoneAnalyser.fftSize);
+    microphoneContext.createMediaStreamSource(stream).connect(microphoneAnalyser);
+    microphoneFrame = requestAnimationFrame(updateMicrophone);
+  }
+
+  function updateSpeaker() {
+    if (!speakerAnalyser || !speakerData) return;
+    intensity = Math.min(0.95, Math.max(0.18, level(speakerAnalyser, speakerData) * 7));
+    speakerFrame = requestAnimationFrame(updateSpeaker);
+  }
+
+  export function startSpeaker(audio: HTMLAudioElement) {
+    speakerContext ??= new AudioContext();
+    if (!speakerAnalyser) {
+      speakerAnalyser = speakerContext.createAnalyser();
+      speakerAnalyser.fftSize = 256;
+      speakerData = new Uint8Array(speakerAnalyser.fftSize);
+      speakerSource ??= speakerContext.createMediaElementSource(audio);
+      speakerSource.connect(speakerAnalyser);
+      speakerAnalyser.connect(speakerContext.destination);
+    }
+    void speakerContext.resume();
+    if (speakerFrame === undefined) speakerFrame = requestAnimationFrame(updateSpeaker);
+  }
+
+  export function stopSpeaker() {
+    if (speakerFrame !== undefined) cancelAnimationFrame(speakerFrame);
+    speakerFrame = undefined;
+    intensity = 0.18;
+  }
+
+  onMount(() => () => {
+    stopMicrophone();
+    stopSpeaker();
+    speakerSource?.disconnect();
+    speakerAnalyser?.disconnect();
+    void speakerContext?.close();
+  });
 </script>
 
-<div class="sparkle-stage" style={`--spark-scale: ${scale}; --spark-glow: ${glow}`}>
-  <div class="rays rays-wide"></div>
-  <div class="rays rays-fine"></div>
-  <div class="spark-core">
-    <div class="core-halo"></div>
-    <div class="core"></div>
+{#if !hidden}
+  <div class="sparkle-stage" style={`--spark-scale: ${scale}; --spark-glow: ${glow}`}>
+    <div class="rays rays-wide"></div>
+    <div class="rays rays-fine"></div>
+    <div class="spark-core">
+      <div class="core-halo"></div>
+      <div class="core"></div>
+    </div>
   </div>
-</div>
+{/if}
 
 <style>
   .sparkle-stage {
@@ -23,7 +114,10 @@
     width: var(--size);
     max-width: 100%;
     aspect-ratio: 1;
-    position: relative;
+    position: absolute;
+    inset: 18% 0 auto;
+    z-index: 3;
+    pointer-events: none;
     justify-self: center;
     margin-inline: auto;
     transform: scale(var(--spark-scale));

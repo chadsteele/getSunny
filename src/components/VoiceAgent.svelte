@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import ChatThread from './ChatThread.svelte';
-  import Footer from './Footer.svelte';
   import LogViewer from './LogViewer.svelte';
-  import RemoteTTS from './RemoteTTS.svelte';
-  import SpeechToText from './SpeechToText.svelte';
+  import Microphone from './Microphone.svelte';
+  import Speaker from './Speaker.svelte';
+  import ProgressIndicator from './ProgressIndicator.svelte';
   import Sparkle from './Sparkle.svelte';
   import { splitSentences } from '../lib/speech-text';
   import { parseSessionReport, reportSystemPrompt, reportTimestamps } from '../lib/session-report';
@@ -26,29 +26,18 @@
   // Increase this value to wait longer after Sunny last hears speech.
   const speechSilenceTimeoutMs = 1800;
   let conversationActive = $state(false);
-  let intensity = $state(0.18);
   let reviewMessageId = $state<number | undefined>();
-  let remoteTts: RemoteTTS;
+  let speaker: Speaker;
+  let microphone: Microphone;
+  let sparkle: Sparkle;
   let chatThreadView = $state<ChatThread | undefined>();
-  let speechToText: SpeechToText;
-  let mediaStream = $state<MediaStream | undefined>();
-  let microphoneVersion = 0;
   let conversationVersion = 0;
   let transcriptionAbort: AbortController | undefined;
   let sunnySpeaking = $state(false);
   let responseInProgress = $state(false);
   let reportInProgress = false;
-  let microphoneContext: AudioContext | undefined;
-  let microphoneAnalyser: AnalyserNode | undefined;
-  let microphoneData: Uint8Array<ArrayBuffer> | undefined;
-  let microphoneAnimationFrame: number | undefined;
   let microphoneMuted = $state(true);
   let speakerMuted = $state(false);
-  let waitingProgress = $state(0);
-  let waitingRemainingMs = $state(60_000);
-  let waitingTimer: ReturnType<typeof setInterval> | undefined;
-  let waitingStartedAt = 0;
-  const maxWaitingMs = 60_000;
 
   function reportStatus(message: string, nextStatus?: Status) {
     statusMessage = message;
@@ -58,61 +47,6 @@
 
   function endpoint(name: string) {
     return `/.netlify/functions/${name}`;
-  }
-
-  function startWaitingProgress() {
-    if (waitingTimer) return;
-    waitingStartedAt = Date.now();
-    waitingProgress = 0;
-    waitingRemainingMs = maxWaitingMs;
-    waitingTimer = setInterval(() => {
-      const elapsed = Math.min(maxWaitingMs, Date.now() - waitingStartedAt);
-      waitingProgress = (elapsed / maxWaitingMs) * 100;
-      waitingRemainingMs = maxWaitingMs - elapsed;
-    }, 100);
-  }
-
-  function stopWaitingProgress() {
-    if (waitingTimer) clearInterval(waitingTimer);
-    waitingTimer = undefined;
-    waitingProgress = 0;
-    waitingRemainingMs = maxWaitingMs;
-  }
-
-  function startMicrophoneVisualizer() {
-    if (!mediaStream || microphoneAnalyser) return;
-    microphoneContext = new AudioContext();
-    microphoneAnalyser = microphoneContext.createAnalyser();
-    microphoneAnalyser.fftSize = 256;
-    microphoneData = new Uint8Array(microphoneAnalyser.fftSize);
-    microphoneContext.createMediaStreamSource(mediaStream).connect(microphoneAnalyser);
-    microphoneAnimationFrame = requestAnimationFrame(updateMicrophoneIntensity);
-  }
-
-  function stopMicrophoneVisualizer() {
-    if (microphoneAnimationFrame !== undefined) {
-      cancelAnimationFrame(microphoneAnimationFrame);
-      microphoneAnimationFrame = undefined;
-    }
-    microphoneAnalyser = undefined;
-    microphoneData = undefined;
-    intensity = 0.18;
-    void microphoneContext?.close();
-    microphoneContext = undefined;
-  }
-
-  function updateMicrophoneIntensity() {
-    if (!microphoneAnalyser || !microphoneData) return;
-    microphoneAnalyser.getByteTimeDomainData(microphoneData);
-    let sum = 0;
-    for (const sample of microphoneData) {
-      const amplitude = (sample - 128) / 128;
-      sum += amplitude * amplitude;
-    }
-    const level = Math.sqrt(sum / microphoneData.length);
-    speechToText?.observe(level);
-    intensity = Math.min(0.9, Math.max(0.18, level * 4));
-    microphoneAnimationFrame = requestAnimationFrame(updateMicrophoneIntensity);
   }
 
   function conversationMessages() {
@@ -201,12 +135,12 @@
       sentenceBuffer += chunk;
       chatThread.update(assistantId, fullText);
       const split = splitSentences(sentenceBuffer);
-      split.sentences.forEach((sentence) => void remoteTts.speak(sentence, prepareFirstSpeech));
+      split.sentences.forEach((sentence) => void speaker.speak(sentence, prepareFirstSpeech));
       sentenceBuffer = split.remaining;
     }
     const finalText = fullText.trim();
     chatThread.update(assistantId, finalText);
-    await remoteTts.speak(sentenceBuffer, prepareFirstSpeech);
+    await speaker.speak(sentenceBuffer, prepareFirstSpeech);
     console.log('[Sunny] LLM SaaS response complete');
   }
 
@@ -217,7 +151,6 @@
     stopListening();
     liveTranscript = '';
     status = 'thinking';
-    startWaitingProgress();
     const controller = new AbortController();
     transcriptionAbort = controller;
     try {
@@ -258,7 +191,6 @@
     } finally {
       if (transcriptionAbort === controller) transcriptionAbort = undefined;
       responseInProgress = false;
-      stopWaitingProgress();
       if (conversationActive) {
         status = 'listening';
         void startListening();
@@ -267,40 +199,20 @@
   }
 
   function stopListening() {
-    microphoneVersion += 1;
-    mediaStream?.getTracks().forEach((track) => track.stop());
-    mediaStream = undefined;
-    stopMicrophoneVisualizer();
+    microphone?.stop();
   }
 
-  async function startListening() {
-    if (microphoneMuted || !conversationActive || responseInProgress || sunnySpeaking) return;
-    if (mediaStream) return;
-    const version = ++microphoneVersion;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      if (
-        version !== microphoneVersion ||
-        microphoneMuted ||
-        !conversationActive ||
-        responseInProgress ||
-        sunnySpeaking
-      ) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      mediaStream = stream;
-      startMicrophoneVisualizer();
-    } catch (error) {
-      if (version === microphoneVersion) handleSpeechError(error);
-    }
+  function canListen() {
+    return !microphoneMuted && conversationActive && !responseInProgress && !sunnySpeaking;
+  }
+
+  function startListening() {
+    return microphone.start();
+  }
+
+  function handleMicrophoneStream(stream: MediaStream | undefined) {
+    if (stream) sparkle.startMicrophone(stream);
+    else sparkle?.stopMicrophone();
   }
 
   function handleRecording(audio: Blob) {
@@ -318,7 +230,7 @@
     if (conversationActive) return;
     conversationActive = true;
     status = 'listening';
-    intensity = 0.45;
+    sparkle.prepareMicrophone();
     await startListening();
   }
 
@@ -328,8 +240,6 @@
     transcriptionAbort = undefined;
     conversationActive = false;
     stopListening();
-    stopWaitingProgress();
-    stopMicrophoneVisualizer();
     status = 'paused';
   }
 
@@ -350,7 +260,7 @@
   function toggleSpeaker() {
     speakerMuted = !speakerMuted;
     if (speakerMuted) {
-      remoteTts.stop();
+      speaker.stop();
     }
   }
 
@@ -370,8 +280,8 @@
 
   function replayAssistantMessage(message: string) {
     if (speakerMuted) return;
-    remoteTts.stop();
-    void remoteTts.speak(message);
+    speaker.stop();
+    void speaker.speak(message);
   }
 
   function handleSpeakingSentence(sentence: string, keepBottom: boolean) {
@@ -392,10 +302,6 @@
     }
   }
 
-  function handleSpeakingIntensity(nextIntensity: number) {
-    intensity = nextIntensity;
-  }
-
   function handleSpeakingError(error: unknown) {
     stopConversation();
     microphoneMuted = true;
@@ -411,7 +317,7 @@
     const { opening, prompt } = sessionPrompts(session);
     systemPrompt = `${prompt}\n\n${voiceCapabilityInstruction}`;
     if (opening && playIntro) {
-      await remoteTts.speak(opening, async () => {
+      await speaker.speak(opening, async () => {
         chatThread.add('assistant', opening);
         await chatThreadView?.scrollToBottomBeforeSpeech();
         return true;
@@ -462,30 +368,14 @@
 
 <main class="session-main">
   <div class="session-stage">
-    <RemoteTTS
-      bind:this={remoteTts}
-      muted={speakerMuted}
-      onSpeakingSentence={handleSpeakingSentence}
-      onSpeakingEnd={handleSpeakingEnd}
-      onIntensityChange={handleSpeakingIntensity}
-      onError={handleSpeakingError}
-    />
-    <SpeechToText
-      bind:this={speechToText}
-      active={conversationActive &&
-        !microphoneMuted &&
-        !responseInProgress &&
-        !sunnySpeaking &&
-        status === 'listening'}
-      silenceTimeoutMs={speechSilenceTimeoutMs}
-      stream={mediaStream}
-      onRecording={handleRecording}
-      onError={handleSpeechError}
+    <Sparkle
+      bind:this={sparkle}
+      hidden={showingLogs}
+      onMicrophoneLevel={(level) => microphone?.observe(level)}
     />
     {#if showingLogs}
       <LogViewer />
     {:else}
-      <Sparkle {intensity} />
       <ChatThread
         bind:this={chatThreadView}
         messages={chatThread.messages}
@@ -499,18 +389,37 @@
       />
     {/if}
   </div>
-  <Footer
-    downloadingModel="Sunny is thinking..."
-    downloadProgress={waitingProgress}
-    downloadRemainingMs={waitingRemainingMs}
-    downloadStatus={statusMessage}
-    indeterminate={false}
+  <ProgressIndicator
+    title="Sunny is thinking..."
+    status={statusMessage}
     showProgress={status === 'thinking'}
-    {microphoneMuted}
-    {speakerMuted}
-    onToggleMicrophone={toggleMicrophone}
-    onToggleSpeaker={toggleSpeaker}
-  />
+  >
+    {#snippet speakerControl()}
+      <Speaker
+        bind:this={speaker}
+        muted={speakerMuted}
+        onToggle={toggleSpeaker}
+        onSpeakingSentence={handleSpeakingSentence}
+        onSpeakingEnd={handleSpeakingEnd}
+        onVisualizerStart={(audio) => sparkle.startSpeaker(audio)}
+        onVisualizerStop={() => sparkle?.stopSpeaker()}
+        onError={handleSpeakingError}
+      />
+    {/snippet}
+    {#snippet microphoneControl()}
+      <Microphone
+        bind:this={microphone}
+        muted={microphoneMuted}
+        active={canListen() && status === 'listening'}
+        {canListen}
+        silenceTimeoutMs={speechSilenceTimeoutMs}
+        onToggle={toggleMicrophone}
+        onStreamChange={handleMicrophoneStream}
+        onRecording={handleRecording}
+        onError={handleSpeechError}
+      />
+    {/snippet}
+  </ProgressIndicator>
 </main>
 
 <style>
@@ -529,11 +438,5 @@
     flex-direction: column;
     min-height: 0;
     position: relative;
-  }
-  .session-stage :global(.sparkle-stage) {
-    position: absolute;
-    inset: 18% 0 auto;
-    z-index: 3;
-    pointer-events: none;
   }
 </style>
