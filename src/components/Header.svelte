@@ -103,12 +103,6 @@
           </svg>
           User profile
         </a>
-        <a href="https://mastermoney.ai/user/signout" target="_blank" rel="noopener noreferrer">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M14 6h5v12h-5M10 8l-4 4 4 4M6 12h9" />
-          </svg>
-          Sign out
-        </a>
       {:else}
         <a href="https://mastermoney.ai/user/signin" target="_blank" rel="noopener noreferrer">
           <svg viewBox="0 0 24 24" aria-hidden="true">
