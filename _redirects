@@ -2,4 +2,5 @@
 /.netlify/functions/*     /.netlify/functions/:splat 200
 /_app/*                   /_app/:splat               200
 /assets/*                 /assets/:splat             200
+/user/*                   https://mastermoney.ai/user/:splat 301
 /*                        /index.html                200
