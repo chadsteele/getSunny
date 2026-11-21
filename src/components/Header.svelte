@@ -88,12 +88,24 @@
       aria-label="Session menu"
       transition:drawerTransition
     >
-      <a href="/user">
+      <a href="https://mastermoney.ai/user" target="_blank" rel="noopener noreferrer">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="8" r="3.5" />
           <path d="M5 20a7 7 0 0 1 14 0" />
         </svg>
+        User profile
+      </a>
+      <a href="https://mastermoney.ai/user/signin" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 6H5v12h5M14 8l4 4-4 4M18 12H9" />
+        </svg>
         Sign in
+      </a>
+      <a href="https://mastermoney.ai/user/signout" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M14 6h5v12h-5M10 8l-4 4 4 4M6 12h9" />
+        </svg>
+        Sign out
       </a>
       <a href="/Sessions">
         <svg viewBox="0 0 24 24" aria-hidden="true">

@@ -12,8 +12,7 @@ object with exactly these fields:
   "comments": string or null
 }
 
-Use only information the user actually provided, including the account name supplied
-as background context. Prefer the name the user requested in the conversation.
+Use only information the user actually provided. Prefer the name the user requested in the conversation.
 Do not invent a name, rating, or feedback. Use null when a value is unknown.
 Summarize the relevant details the user shared in this session, even if the session
 is incomplete or is not about a dream. Use an empty summary only when the user
@@ -24,13 +23,6 @@ export interface SessionReport {
   summary: string;
   rank: number | null;
   comments: string | null;
-}
-
-export function withAccountName(
-  report: SessionReport,
-  firstName: string | undefined,
-): SessionReport {
-  return { ...report, name: report.name?.trim() || firstName?.trim() || null };
 }
 
 export function reportTimestamps(messages: readonly ChatMessage[]) {

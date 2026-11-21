@@ -4,8 +4,6 @@ interface PublicEnv {
   cookieDomain: string;
   appUrl: string;
   siblingAppUrl: string;
-  authLoginUrl: string;
-  authLogoutUrl: string;
   cookieName: string;
 }
 
@@ -45,8 +43,6 @@ const publicEnv: PublicEnv = {
   cookieDomain: validateDomain('VITE_COOKIE_DOMAIN', required('VITE_COOKIE_DOMAIN'), true),
   appUrl: validateUrl('VITE_APP_URL', required('VITE_APP_URL')),
   siblingAppUrl: validateUrl('VITE_SIBLING_APP_URL', required('VITE_SIBLING_APP_URL')),
-  authLoginUrl: validateUrl('VITE_AUTH_LOGIN_URL', required('VITE_AUTH_LOGIN_URL')),
-  authLogoutUrl: validateUrl('VITE_AUTH_LOGOUT_URL', required('VITE_AUTH_LOGOUT_URL')),
   cookieName: required('VITE_COOKIE_NAME'),
 };
 

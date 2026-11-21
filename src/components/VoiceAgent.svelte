@@ -12,7 +12,6 @@
     reportSystemPrompt,
     reportTimestamps,
     reportTotals,
-    withAccountName,
   } from '../lib/session-report';
   import type { BabyStep } from '../lib/sessions/types';
   import {
@@ -23,7 +22,6 @@
     shouldWelcomeBack,
   } from '../lib/session-manager';
   import { contextInstruction, sessionContext } from '../lib/session-context';
-  import { getCurrentUserProfile } from '../lib/user-profile';
   import { startAnonymousSync } from '../lib/anonymous-sync';
   import { logger as console } from '../lib/logger';
   import { readChatStream } from '../lib/chat-stream';
@@ -94,8 +92,7 @@
     console.log('[Sunny] Generating session report...');
     try {
       const messages = conversationMessages();
-      const profile = getCurrentUserProfile();
-      const context = sessionContext(profile, session, undefined);
+      const context = sessionContext(session, undefined);
       const timestamps = reportTimestamps(messages);
       const group = crypto.randomUUID();
       const usageId = startUsage('llm', group);
@@ -116,7 +113,7 @@
       );
       const usage = summarizeUsage(chatThread.usageRecords);
       const report = {
-        ...withAccountName(parseSessionReport(text), profile?.firstName),
+        ...parseSessionReport(text),
         ...timestamps,
         ...reportTotals(timestamps, usage),
         usage,
@@ -397,11 +394,7 @@
 
   async function loadPrompt(playIntro: boolean) {
     const { opening, prompt } = sessionPrompts(session);
-    const context = sessionContext(
-      getCurrentUserProfile(),
-      session,
-      priorSessionReport(session.path),
-    );
+    const context = sessionContext(session, priorSessionReport(session.path));
     systemPrompt = `${prompt}\n\n${voiceCapabilityInstruction}\n\n${contextInstruction(context)}`;
     if (opening && playIntro) {
       const group = crypto.randomUUID();
