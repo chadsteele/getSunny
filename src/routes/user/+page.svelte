@@ -9,6 +9,7 @@
     getCurrentUserProfile,
     saveCurrentUserProfile,
   } from '../../lib/user-profile';
+  import env from '../../env';
   import '../../styles.css';
 
   let stytch: StytchClient | undefined;
@@ -234,7 +235,7 @@
       email = '';
       methodId = '';
       code = '';
-      notice = 'Signed out.';
+      location.assign(env.authLogoutUrl);
     } catch (error) {
       showError(error);
     } finally {
