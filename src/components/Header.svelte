@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import type { BabyStep } from '../lib/sessions/types';
+  import { hasSsoSession } from '../lib/sso-session';
 
   interface Props {
     session: BabyStep;
@@ -13,7 +15,12 @@
   let { session, showingLogs, onToggleView, onReport }: Props = $props();
   let menuOpen = $state(false);
   let deleteConfirmOpen = $state(false);
+  let signedIn = $state(false);
   let menuButton: HTMLButtonElement;
+
+  onMount(() => {
+    signedIn = hasSsoSession();
+  });
 
   function closeMenu() {
     menuOpen = false;
@@ -88,25 +95,28 @@
       aria-label="Session menu"
       transition:drawerTransition
     >
-      <a href="https://mastermoney.ai/user" target="_blank" rel="noopener noreferrer">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="8" r="3.5" />
-          <path d="M5 20a7 7 0 0 1 14 0" />
-        </svg>
-        User profile
-      </a>
-      <a href="https://mastermoney.ai/user/signin" target="_blank" rel="noopener noreferrer">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M10 6H5v12h5M14 8l4 4-4 4M18 12H9" />
-        </svg>
-        Sign in
-      </a>
-      <a href="https://mastermoney.ai/user/signout" target="_blank" rel="noopener noreferrer">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M14 6h5v12h-5M10 8l-4 4 4 4M6 12h9" />
-        </svg>
-        Sign out
-      </a>
+      {#if signedIn}
+        <a href="https://mastermoney.ai/user" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="8" r="3.5" />
+            <path d="M5 20a7 7 0 0 1 14 0" />
+          </svg>
+          User profile
+        </a>
+        <a href="https://mastermoney.ai/user/signout" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M14 6h5v12h-5M10 8l-4 4 4 4M6 12h9" />
+          </svg>
+          Sign out
+        </a>
+      {:else}
+        <a href="https://mastermoney.ai/user/signin" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10 6H5v12h5M14 8l4 4-4 4M18 12H9" />
+          </svg>
+          Sign in
+        </a>
+      {/if}
       <a href="/Sessions">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h8" />
