@@ -7,9 +7,10 @@
     silenceTimeoutMs: number;
     onRecording: (audio: Blob) => void;
     onError: (error: unknown) => void;
+    onNoSpeechTimeout?: () => void;
   }
 
-  let { active, stream, silenceTimeoutMs, onRecording, onError }: Props = $props();
+  let { active, stream, silenceTimeoutMs, onRecording, onError, onNoSpeechTimeout }: Props = $props();
   let recorder: MediaRecorder | undefined;
   let heardSpeech = false;
   let lastSpeechAt = 0;
@@ -18,6 +19,7 @@
   let peakLevel = 0;
   const speechThreshold = 0.02;
   const maxRecordingMs = 60_000;
+  const noSpeechTimeoutMs = 60_000;
 
   export function observe(level: number) {
     if (!recorder || recorder.state !== 'recording') return;
@@ -39,6 +41,7 @@
     }
     if (
       (heardSpeech && now - lastSpeechAt >= silenceTimeoutMs) ||
+      (!heardSpeech && now - startedAt >= noSpeechTimeoutMs) ||
       now - startedAt >= maxRecordingMs
     ) {
       recorder.stop();
@@ -74,7 +77,7 @@
           if (recorder === current) recorder = undefined;
           if (cancelled || failed) return;
           if (!heardSpeech) {
-            startRecording();
+            onNoSpeechTimeout?.();
             return;
           }
           const audio = new Blob(chunks, { type: current.mimeType || 'audio/webm' });

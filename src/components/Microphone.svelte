@@ -9,9 +9,11 @@
     canListen: () => boolean;
     silenceTimeoutMs: number;
     onToggle: () => void | Promise<void>;
+    onHold: () => void;
     onStreamChange: (stream: MediaStream | undefined) => void;
     onRecording: (audio: Blob) => void;
     onError: (error: unknown) => void;
+    onNoSpeechTimeout?: () => void;
   }
 
   let {
@@ -20,9 +22,11 @@
     canListen,
     silenceTimeoutMs,
     onToggle,
+    onHold,
     onStreamChange,
     onRecording,
     onError,
+    onNoSpeechTimeout,
   }: Props = $props();
   let stream = $state<MediaStream | undefined>();
   let speechToText: SpeechToText;
@@ -72,8 +76,14 @@
   {silenceTimeoutMs}
   {onRecording}
   {onError}
+  {onNoSpeechTimeout}
 />
-<AudioControl {muted} label={muted ? 'Unmute microphone' : 'Mute microphone'} onclick={onToggle}>
+<AudioControl
+  {muted}
+  label={muted ? 'Unmute microphone' : 'Mute microphone'}
+  onclick={onToggle}
+  {onHold}
+>
   <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" />
   <path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" />
   {#if muted}<path class="slash" d="m4 4 16 16" />{/if}

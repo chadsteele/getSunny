@@ -13,6 +13,7 @@
     usageEntries: { group: string; usage: UsageRecord }[];
     showUsage: boolean;
     syncError?: string;
+    guidance?: string;
     onUserMessageClick?: (messageId: number) => void;
     onAssistantMessageClick?: (message: ChatMessage) => void;
     onDeleteReview?: () => void;
@@ -27,6 +28,7 @@
     usageEntries,
     showUsage,
     syncError = '',
+    guidance = '',
     onUserMessageClick,
     onAssistantMessageClick,
     onDeleteReview,
@@ -166,6 +168,7 @@
 
   $effect(() => {
     void messages.length;
+    void guidance;
     void tick().then(() =>
       chatThread?.scrollTo({ top: chatThread.scrollHeight, behavior: 'instant' }),
     );
@@ -235,6 +238,9 @@
       {/if}
     </div>
   {/each}
+  {#if guidance}
+    <div class="chat-row"><div class="chat-bubble" role="status">{guidance}</div></div>
+  {/if}
   {#if syncError}
     <div class="chat-row"><div class="chat-bubble" role="status">{syncError}</div></div>
   {/if}

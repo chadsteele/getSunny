@@ -57,6 +57,7 @@
   let introAbort: AbortController | undefined;
   let mounted = false;
   let syncError = $state('');
+  let microphoneGuidance = $state('');
 
   function startUsage(service: UsageRecord['service'], group: string) {
     return chatThread.addUsage(unknownUsage(service), group);
@@ -223,6 +224,7 @@
         reportStatus('I could not hear that. Please try again.');
         return;
       }
+      microphoneGuidance = '';
       const conversationHistory = history();
       chatThread.add('user', transcript, group);
       await streamResponse(transcript, conversationHistory);
@@ -270,6 +272,12 @@
     reportStatus(error instanceof Error ? error.message : 'Speech recognition failed.', 'error');
   }
 
+  function handleNoSpeechTimeout() {
+    stopConversation();
+    microphoneMuted = true;
+    reportStatus("Be sure and unmute when you're ready to talk again", 'paused');
+  }
+
   async function startConversation() {
     if (conversationActive) return;
     conversationActive = true;
@@ -298,6 +306,14 @@
     } catch (error) {
       microphoneMuted = true;
       reportStatus(error instanceof Error ? error.message : 'Microphone access failed.', 'error');
+    }
+  }
+
+  function handleMicrophoneHold() {
+    const message = "Just click the microphone button once; you don't need to hold it.";
+    microphoneGuidance = message;
+    if (!responseInProgress && !sunnySpeaking) {
+      void speaker.speak(message, crypto.randomUUID());
     }
   }
 
@@ -480,6 +496,7 @@
         usageEntries={chatThread.usageEntries}
         {showUsage}
         {syncError}
+        guidance={microphoneGuidance}
         {liveTranscript}
         {speakingSentence}
         {reviewMessageId}
@@ -513,9 +530,11 @@
         {canListen}
         silenceTimeoutMs={speechSilenceTimeoutMs}
         onToggle={toggleMicrophone}
+        onHold={handleMicrophoneHold}
         onStreamChange={handleMicrophoneStream}
         onRecording={handleRecording}
         onError={handleSpeechError}
+        onNoSpeechTimeout={handleNoSpeechTimeout}
       />
     {/snippet}
   </Footer>

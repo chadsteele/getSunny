@@ -32,6 +32,7 @@
   let audio: HTMLAudioElement | undefined;
   let audioUrl: string | undefined;
   let speechQueue = Promise.resolve();
+  let speechFetchQueue = Promise.resolve();
   let cancelled = false;
   let playbackVersion = 0;
   let pendingPlaybackResolve: (() => void) | undefined;
@@ -77,18 +78,23 @@
     return blob;
   }
 
-  function prefetchSpeech() {
-    for (const job of speechJobs.slice(0, 3)) {
-      job.result ??= generateSpeech(job.sentence, job.controller.signal, job.group).then(
+  function prefetchSpeech(job: SpeechJob) {
+    job.result = speechFetchQueue
+      .then(() => {
+        job.controller.signal.throwIfAborted();
+        return generateSpeech(job.sentence, job.controller.signal, job.group);
+      })
+      .then(
         (blob): SpeechResult => ({ blob }),
         (error: unknown): SpeechResult => ({ error }),
       );
-    }
+    speechFetchQueue = job.result.then(() => {});
   }
 
   function cancelSpeechJobs() {
     for (const job of speechJobs) job.controller.abort();
     speechJobs = [];
+    speechFetchQueue = Promise.resolve();
   }
 
   function unlockPlayback() {
@@ -174,7 +180,7 @@
     const requestVersion = playbackVersion;
     const job: SpeechJob = { sentence, group, controller: new AbortController() };
     speechJobs.push(job);
-    prefetchSpeech();
+    prefetchSpeech(job);
     speechQueue = speechQueue
       .then(() => {
         if (requestVersion !== playbackVersion) return;
@@ -183,7 +189,6 @@
       .then(() => {
         if (requestVersion !== playbackVersion) return;
         speechJobs.shift();
-        prefetchSpeech();
       })
       .catch((error: unknown) => {
         if (requestVersion !== playbackVersion) return;

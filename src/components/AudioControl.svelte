@@ -1,14 +1,39 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import type { Snippet } from 'svelte';
 
   interface Props {
     muted: boolean;
     label: string;
     onclick: () => void | Promise<void>;
+    onHold?: () => void;
     children: Snippet;
   }
 
-  let { muted, label, onclick, children }: Props = $props();
+  let { muted, label, onclick, onHold, children }: Props = $props();
+  let holdTimer: ReturnType<typeof setTimeout> | undefined;
+  let holdPointer: number | undefined;
+
+  function cancelHold() {
+    clearTimeout(holdTimer);
+    holdTimer = undefined;
+    holdPointer = undefined;
+  }
+
+  function startHold(event: PointerEvent) {
+    if (!onHold || !event.isPrimary || event.button !== 0 || holdPointer !== undefined) return;
+    holdPointer = event.pointerId;
+    holdTimer = setTimeout(() => {
+      holdTimer = undefined;
+      onHold?.();
+    }, 650);
+  }
+
+  function endHold(event: PointerEvent) {
+    if (event.pointerId === holdPointer) cancelHold();
+  }
+
+  onMount(() => cancelHold);
 </script>
 
 <button
@@ -18,6 +43,11 @@
   aria-label={label}
   aria-pressed={muted}
   {onclick}
+  onpointerdown={startHold}
+  onpointerup={endHold}
+  onpointercancel={endHold}
+  onpointerleave={endHold}
+  onlostpointercapture={endHold}
 >
   <svg viewBox="0 0 24 24" aria-hidden="true">
     {@render children()}
