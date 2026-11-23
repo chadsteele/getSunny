@@ -37,6 +37,28 @@
   let playbackVersion = 0;
   let pendingPlaybackResolve: (() => void) | undefined;
   let playbackUnlocked = false;
+  const shortCache = new Map<string, Blob>();  // ≤50 chars: frequent short phrases
+  const longCache = new Map<string, Blob>();   // 51-200 chars: longer responses
+  
+  function debugCache() {
+    console.log(`[Sunny] Cache: short=${shortCache.size} items, long=${longCache.size} items`);
+    if (shortCache.size > 0) {
+      console.log(`  Short cache:`);
+      for (const [key] of shortCache) {
+        console.log(`    - "${key}"`);
+      }
+    }
+    if (longCache.size > 0) {
+      console.log(`  Long cache (sample):`);
+      let count = 0;
+      for (const [key] of longCache) {
+        if (count < 3) console.log(`    - "${key.slice(0, 60)}..."`);
+        count++;
+      }
+      if (longCache.size > 3) console.log(`    ... and ${longCache.size - 3} more`);
+    }
+  }
+
   type SpeechResult = { blob: Blob } | { error: unknown };
   type SpeechJob = {
     sentence: string;
@@ -47,19 +69,45 @@
   let speechJobs: SpeechJob[] = [];
 
   async function generateSpeech(text: string, signal: AbortSignal, group: string) {
+    console.log(`[Sunny] generateSpeech: "${text}" (${text.length} chars)`);
+    
+    // Check appropriate cache tier
+    if (text.length <= 50 && shortCache.has(text)) {
+      console.log(`[Sunny] ✓ SHORT CACHE HIT`);
+      return shortCache.get(text)!;
+    }
+    if (text.length <= 200 && longCache.has(text)) {
+      console.log(`[Sunny] ✓ LONG CACHE HIT`);
+      return longCache.get(text)!;
+    }
+
+    console.log(`[Sunny] ✗ Cache miss, calling API...`);
     const usageId = onUsageStart(group);
-    console.log(`[Sunny]  ${text}`);
+    
     const response = await fetch('/.netlify/functions/tts', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text }),
       signal,
     });
+    
     if (!response.ok) {
       const body = await response.text();
       throw new Error(`Speech synthesis failed (${response.status}): ${body}`);
     }
+    
     const blob = await response.blob();
+    console.log(`[Sunny] API response: ${blob.size} bytes`);
+    
+    // Cache in appropriate tier
+    if (text.length <= 50) {
+      shortCache.set(text, blob);
+      console.log(`[Sunny] ✓ Cached in SHORT tier`);
+    } else if (text.length <= 200) {
+      longCache.set(text, blob);
+      console.log(`[Sunny] ✓ Cached in LONG tier`);
+    }
+
     const length = response.headers.get('x-sunny-tts-instruction-length');
     if (length === null || !/^\d+$/.test(length)) {
       console.warn('[Sunny] Speech usage estimate unavailable: missing instruction length.');
@@ -177,6 +225,15 @@
     const displaySentence = normalizeForDisplay(text);
     const sentence = normalizeForSpeech(text);
     if (!displaySentence || !sentence || muted) return;
+    
+    debugCache();
+    
+    if (sentence.length <= 200) {
+      const isCached = (sentence.length <= 50 ? shortCache : longCache).has(sentence);
+      const tier = sentence.length <= 50 ? 'short' : 'long';
+      console.log(`[Sunny] Queue: "${sentence.slice(0, 40)}${sentence.length > 40 ? '...' : ''}" (${sentence.length} chars, ${tier} tier) ${isCached ? '✓ cached' : '✗ new'}`);
+    }
+    
     const requestVersion = playbackVersion;
     const job: SpeechJob = { sentence, group, controller: new AbortController() };
     speechJobs.push(job);

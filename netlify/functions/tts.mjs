@@ -24,10 +24,12 @@ export default async function tts(request) {
       instructions,
       response_format: 'mp3',
     });
-    return new Response(await speech.arrayBuffer(), {
+    const buffer = await speech.arrayBuffer();
+    const isCacheable = text.length <= 200;
+    return new Response(buffer, {
       headers: {
         'content-type': 'audio/mpeg',
-        'cache-control': 'no-store',
+        'cache-control': isCacheable ? 'public, max-age=31536000' : 'no-store',
         'x-sunny-tts-instruction-length': String(instructions.length),
       },
     });
