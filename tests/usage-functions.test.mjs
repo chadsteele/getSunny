@@ -67,7 +67,7 @@ test('Venice streams text and the final provider usage as separate events', asyn
   globalThis.fetch = async (_url, init) => {
     requestBody = JSON.parse(init.body);
     const events = [
-      { choices: [{ delta: { content: 'hello' } }] },
+      { choices: [{ delta: { content: '{"text":"hello"}' } }] },
       { choices: [], usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } },
     ];
     return new Response(
@@ -81,22 +81,50 @@ test('Venice streams text and the final provider usage as separate events', asyn
     const response = await chatStream(
       new Request('http://localhost/chat-stream', {
         method: 'POST',
-        body: JSON.stringify({ prompt: 'hello' }),
+        body: JSON.stringify({
+          systemPrompt: 'Reply with JSON.',
+          history: [{ role: 'user', parts: [{ text: JSON.stringify({ text: 'earlier' }) }] }],
+          prompt: JSON.stringify({ text: 'hello' }),
+        }),
         headers: { 'content-type': 'application/json' },
       }),
     );
     assert.equal(response.status, 200);
     assert.deepEqual(requestBody.stream_options, { include_usage: true });
+    assert.deepEqual(requestBody.response_format, { type: 'json_object' });
+    const messages = requestBody.messages.map((message) => JSON.parse(message.content));
+    assert.deepEqual(messages[0], { instructions: 'Reply with JSON.' });
+    assert.match(messages[1].instructions, /You are Sunny/);
+    assert.deepEqual(messages.slice(2), [{ text: 'earlier' }, { text: 'hello' }]);
     const events = (await response.text())
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line));
     assert.deepEqual(events, [
-      { type: 'text', text: 'hello' },
+      { type: 'text', text: '{"text":"hello"}' },
       { type: 'usage', usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } },
     ]);
   } finally {
     globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.VENICE_API_KEY;
+    else process.env.VENICE_API_KEY = originalKey;
+  }
+});
+
+test('Venice rejects messages that are not JSON objects', async () => {
+  const originalKey = process.env.VENICE_API_KEY;
+  process.env.VENICE_API_KEY = 'test-key';
+  try {
+    const response = await chatStream(
+      new Request('http://localhost/chat-stream', {
+        method: 'POST',
+        body: JSON.stringify({ systemPrompt: 'JSON', history: [], prompt: 'plain text' }),
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /JSON/);
+  } finally {
     if (originalKey === undefined) delete process.env.VENICE_API_KEY;
     else process.env.VENICE_API_KEY = originalKey;
   }

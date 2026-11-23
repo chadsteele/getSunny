@@ -7,6 +7,8 @@ let server;
 let steps;
 let condition;
 let selectSession;
+let sessionContext;
+let openingPrompt;
 
 before(async () => {
   server = await createServer({
@@ -19,6 +21,7 @@ before(async () => {
     .startsAtLeast18HoursAfterPreviousSession;
   selectSession = (await server.ssrLoadModule('/src/lib/session-manager/select-session.ts'))
     .selectSession;
+  ({ sessionContext, openingPrompt } = await server.ssrLoadModule('/src/lib/session-context.ts'));
 });
 
 after(async () => {
@@ -35,7 +38,7 @@ test('outline exports every baby step with a matching file and a distinct prompt
   assert.equal(new Set(expectedFiles).size, 35);
   assert.equal(new Set(steps.map(({ prompt }) => prompt)).size, 35);
   for (const step of steps) {
-    assert.ok(step.prompt.trim());
+    assert.ok([step.prompt, step.role, step.process, step.rules].some((text) => text?.trim()));
     assert.ok(step.intro.trim());
     assert.ok(step.intro.toLowerCase().includes(step.name.toLowerCase()));
     assert.equal(step.condition, condition);
@@ -43,8 +46,64 @@ test('outline exports every baby step with a matching file and a distinct prompt
   }
   for (const file of expectedFiles) await access(new URL(file, directory));
   const files = await readdir(directory, { recursive: true });
-  const definitions = files.filter((file) => file.endsWith('.ts') && file.includes('/'));
+  const definitions = files.filter(
+    (file) => file.endsWith('.ts') && file.includes('/') && !file.endsWith('/base.ts'),
+  );
   assert.deepEqual(definitions.sort(), expectedFiles.sort());
+});
+
+test('opening includes remaining session fields, including new fields, without repeating context', () => {
+  const session = {
+    ...steps[0],
+    futureDetails: { instructions: ['first', 'second'], enabled: true },
+    extraCondition: undefined,
+  };
+  const context = sessionContext(session, undefined);
+  const payload = JSON.parse(openingPrompt(session, 'Opening script', context));
+  assert.equal(payload.opening, 'Opening script');
+  assert.deepEqual(payload.context, context);
+  for (const [key, value] of Object.entries(session)) {
+    if (key !== 'condition' && !Object.hasOwn(context.session, key) && value !== undefined) {
+      assert.deepEqual(payload.sessionDetails[key], value);
+    } else {
+      assert.equal(Object.hasOwn(payload.sessionDetails, key), false);
+    }
+  }
+  const extendedContext = {
+    ...context,
+    session: { ...context.session, futureDetails: session.futureDetails },
+  };
+  assert.equal(
+    Object.hasOwn(
+      JSON.parse(openingPrompt(session, 'Opening script', extendedContext)).sessionDetails,
+      'futureDetails',
+    ),
+    false,
+  );
+  assert.throws(
+    () => openingPrompt({ ...session, futureDetails: { invalid: () => {} } }, 'Opening', context),
+    /non-JSON value/,
+  );
+});
+
+test('sessions inherit the common values for their step and phase', async () => {
+  const root = (await server.ssrLoadModule('/src/lib/sessions/base.ts')).default;
+  assert.equal(root.condition, condition);
+  for (const session of steps) {
+    const stepPath = session.step.toLowerCase();
+    const phasePath = session.phase.toLowerCase();
+    const stepBase = (await server.ssrLoadModule(`/src/lib/sessions/${stepPath}/base.ts`)).default;
+    const phaseBase = (
+      await server.ssrLoadModule(`/src/lib/sessions/${stepPath}/${phasePath}/base.ts`)
+    ).default;
+    assert.equal(stepBase.condition, root.condition);
+    assert.equal(stepBase.step, session.step);
+    assert.equal(phaseBase.condition, stepBase.condition);
+    assert.equal(phaseBase.step, stepBase.step);
+    assert.equal(phaseBase.phase, session.phase);
+    assert.equal(phaseBase.tagline, session.tagline);
+    assert.equal(session.condition, phaseBase.condition);
+  }
 });
 
 test('requires a full 18 hours after the prior session ends', () => {

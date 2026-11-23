@@ -87,11 +87,21 @@ export function shouldWelcomeBack(
 
 export function sessionPrompts(session: BabyStep) {
   const intro = session.intro;
-  const prompt = session.prompt;
   if (typeof intro !== 'string' || !intro.trim()) {
     throw new Error('The session opening prompt is not configured.');
   }
-  if (typeof prompt !== 'string' || !prompt.trim()) {
+  const sections = [
+    ['Role', session.role],
+    ['Process', session.process],
+    ['Objectives', session.objectives],
+    ['Rules', session.rules],
+    ['Commands', session.commands],
+  ] as const;
+  const prompt = [
+    ...(session.prompt?.trim() ? [session.prompt] : []),
+    ...sections.filter(([, text]) => text?.trim()).map(([label, text]) => `${label}:\n\n${text}`),
+  ].join('\n\n');
+  if (!prompt.trim()) {
     throw new Error('The conversation system prompt is not configured.');
   }
   const startMarker = 'Session Opening Script';

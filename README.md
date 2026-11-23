@@ -24,6 +24,15 @@ Reports include `totalTimeSeconds` (elapsed time between the first and last visi
 
 When starting or restarting a session, Sunny sends the current session details and the selected prior report to Venice to generate a spoken and displayed intro. The prior report is the latest saved report for the preceding outline session, or, if absent, the report from the most recently active different session (based on its last chat timestamp, or report time if unavailable). Continuing an existing chat does not generate a new intro. This context is also supplied to conversation and report requests; report usage and other chat histories are not included. Intro generation is included in session usage.
 
+Intro generation also receives the session's other defined fields, including future fields, as
+structured data. The local availability condition is excluded; additional fields must be JSON-serializable.
+
+Language-model messages use JSON. Spoken replies contain a `text` field and may include an `ask`
+field or other metadata; only `text` is displayed and spoken. Metadata is logged but does not
+automatically trigger actions. Requests, raw responses, and parsed responses are logged in the
+browser console and Sunny's log viewer, including conversation and session details; avoid sharing
+these logs unless you intend to disclose their contents.
+
 When reopening an incomplete session at least one hour after its last non-empty transcription, Sunny speaks a brief welcome-back message without adding it to the conversation. A saved report with a satisfaction rating for the current chat marks it complete for this greeting; a restarted chat is treated separately. Speech usage is still included in the session's usage records.
 
 Usage records are saved alongside the session chat in browser storage, including requests
@@ -104,6 +113,12 @@ node --experimental-strip-types --test tests/session-report.test.mjs
 ```
 
 Run the baby-step definition and timing tests with `node --test tests/baby-steps.test.mjs`.
+Session definitions spread the `base.ts` in their phase directory, which inherits the step and
+root bases. Put shared values at the appropriate level and session-specific values in the
+individual definition; later properties can override inherited values.
+Session `prompt`, `role`, `process`, `objectives`, `rules`, and `commands` are assembled in that order for
+the system prompt. Put shared instructions in a base and override them in a child when needed.
+The root role, process, objectives, and rules apply to every session unless overridden.
 
 ## Publish to GitHub
 

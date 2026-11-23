@@ -1,10 +1,8 @@
-import { startsAtLeast18HoursAfterPreviousSession } from '../../../session-manager/condition';
+import base from './base';
 import type { BabyStep } from '../../types';
 
 export default {
-  step: 'Create',
-  phase: 'Freedom',
-  tagline: 'Inspiration, Motivation, Maximum Impact.',
+  ...base,
   name: 'Burn the Boats',
   description:
     'You make an irrevocable commitment to the new financial direction—no fallback to the old scarcity default.',
@@ -12,6 +10,5 @@ export default {
   intro:
     "This session is called Burn the Boats. We'll explore your commitment to a new financial direction instead of returning to the old scarcity default.",
   prompt:
-    'Help the user articulate a meaningful commitment to a new financial direction, including a realistic next action. Ask one question at a time.',
-  condition: startsAtLeast18HoursAfterPreviousSession,
+    'Help the user articulate a meaningful commitment to a new financial direction, including a realistic next action.',
 } satisfies BabyStep;

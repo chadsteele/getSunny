@@ -1,10 +1,8 @@
-import { startsAtLeast18HoursAfterPreviousSession } from '../../../session-manager/condition';
+import base from './base';
 import type { BabyStep } from '../../types';
 
 export default {
-  step: 'Create',
-  phase: 'Freedom',
-  tagline: 'Inspiration, Motivation, Maximum Impact.',
+  ...base,
   name: 'No Return Path',
   description:
     'The story ends the return path; the cost of going back is higher than the cost of continuing.',
@@ -12,6 +10,5 @@ export default {
   intro:
     "This session is called No Return Path. We'll explore how your story changes when continuing forward matters more than going back.",
   prompt:
-    'Help the user explore why they want to continue their new direction and how they will handle the pull of old habits. Ask one question at a time.',
-  condition: startsAtLeast18HoursAfterPreviousSession,
+    'Help the user explore why they want to continue their new direction and how they will handle the pull of old habits.',
 } satisfies BabyStep;

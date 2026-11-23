@@ -104,15 +104,68 @@ test('initializes chats for continue and restart while retaining deleted history
   assert.equal(shouldRestartSession(outline[3].path), false);
 });
 
-test('uses session prompts and validates missing prompt text', () => {
+test('assembles session prompt sections and validates missing prompt text', async () => {
   const { sessionPrompts } = sessionStorageApi;
+  const { prompt, role, process, objectives, rules } = outline[0];
+  const parent = (await server.ssrLoadModule('/src/lib/sessions/assess/clarity/base.ts')).default;
+  assert.ok(parent.prompt.trim());
+  assert.equal(prompt, parent.prompt);
+  assert.ok(role?.trim());
+  assert.ok(process?.trim());
+  assert.ok(objectives?.trim());
+  assert.ok(rules?.trim());
   assert.deepEqual(sessionPrompts(outline[0]), {
     opening: outline[0].intro,
-    prompt: outline[0].prompt,
+    prompt: `${prompt}\n\nRole:\n\n${role}\n\nProcess:\n\n${process}\n\nObjectives:\n\n${objectives}\n\nRules:\n\n${rules}`,
   });
+  assert.ok(objectives.startsWith(parent.objectives));
+  assert.match(sessionPrompts(outline[0]).prompt, /The dream — measurable and detailed/);
 
+  for (const session of outline.slice(1)) {
+    assert.equal(session.role, role);
+    assert.ok(process.startsWith(session.process));
+    assert.equal(session.rules, rules);
+    assert.equal(
+      sessionPrompts(session).prompt,
+      `${session.prompt}\n\nRole:\n\n${role}\n\nProcess:\n\n${session.process}\n\nObjectives:\n\n${session.objectives}\n\nRules:\n\n${rules}`,
+    );
+  }
+  assert.ok(!prompt.includes('undefined'));
+  assert.equal(
+    sessionPrompts({
+      ...outline[1],
+      role: undefined,
+      process: undefined,
+      objectives: undefined,
+      rules: undefined,
+      commands: 'Finish.',
+    }).prompt,
+    `${outline[1].prompt}\n\nCommands:\n\nFinish.`,
+  );
+  assert.equal(
+    sessionPrompts({
+      ...outline[1],
+      role: undefined,
+      process: undefined,
+      objectives: undefined,
+      rules: undefined,
+    }).prompt,
+    outline[1].prompt,
+  );
   assert.throws(() => sessionPrompts({ ...outline[0], intro: ' ' }), /opening/);
-  assert.throws(() => sessionPrompts({ ...outline[0], prompt: '' }), /system prompt/);
+  assert.throws(
+    () =>
+      sessionPrompts({
+        ...outline[0],
+        prompt: '',
+        role: undefined,
+        process: undefined,
+        objectives: undefined,
+        rules: undefined,
+        commands: undefined,
+      }),
+    /system prompt/,
+  );
   const intro =
     'Session Opening Script\n"Hello there"\nSession Closing (After Story Consolidation)';
   assert.equal(sessionPrompts({ ...outline[0], intro }).opening, 'Hello there');
