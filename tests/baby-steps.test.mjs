@@ -7,6 +7,7 @@ let server;
 let steps;
 let condition;
 let selectSession;
+let availableSessionPaths;
 let sessionContext;
 let openingPrompt;
 
@@ -19,8 +20,9 @@ before(async () => {
   steps = (await server.ssrLoadModule('/src/lib/sessions/outline.ts')).default;
   condition = (await server.ssrLoadModule('/src/lib/session-manager/condition.ts'))
     .startsAtLeast18HoursAfterPreviousSession;
-  selectSession = (await server.ssrLoadModule('/src/lib/session-manager/select-session.ts'))
-    .selectSession;
+  ({ selectSession, availableSessionPaths } = await server.ssrLoadModule(
+    '/src/lib/session-manager/select-session.ts',
+  ));
   ({ sessionContext, openingPrompt } = await server.ssrLoadModule('/src/lib/session-context.ts'));
 });
 
@@ -131,6 +133,7 @@ test('selects sessions in outline order after completion and the waiting period'
     session: steps[0],
     isNew: true,
   });
+
   assert.deepEqual(selectSession(steps, [{ path: steps[0].path, completedAt: null }], now), {
     kind: 'session',
     session: steps[0],
@@ -151,4 +154,52 @@ test('selects sessions in outline order after completion and the waiting period'
   });
   assert.throws(() => selectSession(steps, [{ path: '/unknown', completedAt }], now));
   assert.throws(() => selectSession(steps, [{ path: steps[0].path, completedAt: 'bad' }], now));
+});
+
+test('only enables reached sessions and the next session after the 18-hour wait', () => {
+  const end = '2026-01-01T10:00:00Z';
+  const completed = new Map([[steps[0].path, end]]);
+  const available = (
+    now,
+    started = [],
+    selected = steps[0].path,
+    reports = completed,
+    host = 'sunny.example',
+  ) => availableSessionPaths(steps, started, selected, reports, new Date(now), host);
+  assert.deepEqual(available('2026-01-02T03:59:59.999Z'), [steps[0].path]);
+  assert.deepEqual(available('2026-01-02T04:00:00.000Z'), [steps[0].path, steps[1].path]);
+  const twoCompleted = new Map([
+    [steps[0].path, end],
+    [steps[1].path, '2026-01-02T10:00:00Z'],
+  ]);
+  assert.deepEqual(available('2026-01-03T03:59:59.999Z', [], steps[0].path, twoCompleted), [
+    steps[0].path,
+    steps[1].path,
+  ]);
+  assert.deepEqual(
+    available('2026-01-03T04:00:00.000Z', [], steps[0].path, twoCompleted),
+    steps.slice(0, 3).map((session) => session.path),
+  );
+  assert.deepEqual(available('2026-01-03T00:00:00Z', [], steps[0].path, new Map()), [
+    steps[0].path,
+  ]);
+  assert.deepEqual(
+    available('2026-01-03T00:00:00Z', [steps[2].path], steps[0].path, new Map()),
+    steps.slice(0, 3).map((session) => session.path),
+  );
+  assert.deepEqual(
+    available('2026-01-03T00:00:00Z', [], steps[2].path, new Map()),
+    steps.slice(0, 3).map((session) => session.path),
+  );
+  for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+    assert.equal(
+      available('2026-01-01T10:00:00Z', [], steps[0].path, new Map(), host).length,
+      steps.length,
+    );
+  }
+  assert.equal(
+    available('2026-01-01T10:00:00Z', [], steps[0].path, new Map(), 'localhost.example').length,
+    1,
+  );
+  assert.throws(() => available('2026-01-03T00:00:00Z', [], '/missing'), /not in the outline/);
 });

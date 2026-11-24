@@ -140,6 +140,22 @@ export function hasRatedReportSince(path: string, timestamp: string): boolean {
   );
 }
 
+export function completedSessionEnds(now: Date): Map<string, string> {
+  if (!Number.isFinite(now.getTime())) throw new RangeError('Invalid current time.');
+  const completed = new Map<string, string>();
+  for (const { path, generatedAt, report } of readReports()) {
+    if (report.rank === null || report.lastTimestamp === null) continue;
+    const end = Date.parse(report.lastTimestamp);
+    const generated = Date.parse(generatedAt);
+    if (generated < end || generated > now.getTime()) continue;
+    const existing = completed.get(path);
+    if (existing === undefined || end < Date.parse(existing)) {
+      completed.set(path, report.lastTimestamp);
+    }
+  }
+  return completed;
+}
+
 export function priorSessionReport(path: string): SessionReportEntry | undefined {
   const index = outline.findIndex((session) => session.path === path);
   if (index < 0) throw new Error('The current session is not in the outline.');

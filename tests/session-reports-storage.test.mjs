@@ -80,6 +80,38 @@ test('missing dates fall back to report time and malformed storage is surfaced',
   assert.equal(memory.get('sunny-session-reports'), '{}');
 });
 
+test('uses the earliest valid rated report end as completion evidence', () => {
+  memory.clear();
+  const path = outline[0].path;
+  const ranked = { ...report('Complete', '2026-01-01T10:00:00Z'), rank: 4 };
+  const entries = [
+    { path, generatedAt: '2026-01-01T10:01:00Z', report: ranked },
+    {
+      path,
+      generatedAt: '2026-01-02T10:01:00Z',
+      report: { ...ranked, lastTimestamp: '2026-01-02T10:00:00Z' },
+    },
+    {
+      path: outline[1].path,
+      generatedAt: '2026-01-01T10:01:00Z',
+      report: report('Unrated', '2026-01-01T10:00:00Z'),
+    },
+    { path: outline[2].path, generatedAt: '2026-01-01T09:00:00Z', report: ranked },
+    { path: outline[3].path, generatedAt: '2026-01-05T00:00:00Z', report: ranked },
+    {
+      path: outline[4].path,
+      generatedAt: '2026-01-01T10:01:00Z',
+      report: { ...ranked, lastTimestamp: null },
+    },
+  ];
+  memory.set('sunny-session-reports', JSON.stringify(entries));
+  assert.deepEqual(
+    [...manager.completedSessionEnds(new Date('2026-01-03T00:00:00Z'))],
+    [[path, '2026-01-01T10:00:00Z']],
+  );
+  assert.throws(() => manager.completedSessionEnds(new Date('bad')), /Invalid current time/);
+});
+
 test('derives totals for older saved reports and preserves newly saved totals', () => {
   memory.clear();
   const old = report('legacy', '2024-01-01T00:05:00Z');

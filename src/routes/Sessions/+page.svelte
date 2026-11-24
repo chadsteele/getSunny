@@ -4,9 +4,11 @@
   import Layout from '../../components/Layout.svelte';
   import outline from '../../lib/sessions/outline';
   import {
+    availableSessionPaths,
+    completedSessionEnds,
+    currentSession,
     groupSessions,
     hasSessionHistory,
-    isSessionEnabled,
     selectSessionForChat,
   } from '../../lib/session-manager';
   import type { BabyStep } from '../../lib/sessions/types';
@@ -14,34 +16,58 @@
 
   const groups = groupSessions(outline);
   let started = $state<string[]>([]);
+  let available = $state<string[]>([]);
   let selected = $state<BabyStep | null>(null);
-  let now = $state(new Date());
   let errorMessage = $state('');
   let storageError = $state(false);
   let loading = $state(true);
   let continueButton = $state<HTMLButtonElement>();
 
   function isEnabled(session: BabyStep) {
-    return isSessionEnabled(session, started, now);
+    return available.includes(session.path);
   }
 
-  onMount(() => {
+  function refreshSessions() {
+    const now = new Date();
+    const startedPaths = outline.filter(hasSessionHistory).map((session) => session.path);
+    const paths = availableSessionPaths(
+      outline,
+      startedPaths,
+      currentSession().path,
+      completedSessionEnds(now),
+      now,
+      window.location.hostname,
+    );
+    started = startedPaths;
+    available = paths;
+    storageError = false;
+  }
+
+  function updateSessions() {
     try {
-      started = outline.filter(hasSessionHistory).map((session) => session.path);
+      refreshSessions();
     } catch (error) {
       console.error('[Sessions] Unable to read saved sessions:', error);
       storageError = true;
-      errorMessage = 'Unable to read session history from browser storage.';
+      errorMessage = 'Unable to read session progress from browser storage.';
     } finally {
       loading = false;
     }
-    const timer = setInterval(() => (now = new Date()), 60_000);
-    return () => clearInterval(timer);
+  }
+
+  onMount(() => {
+    updateSessions();
+    const timer = setInterval(updateSessions, 60_000);
+    window.addEventListener('storage', updateSessions);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('storage', updateSessions);
+    };
   });
 
   async function openSession(session: BabyStep, restart: boolean) {
     try {
-      now = new Date();
+      refreshSessions();
       if (!isEnabled(session)) throw new Error('This session is not available yet.');
       selectSessionForChat(session, restart);
       await goto('/');
@@ -79,7 +105,8 @@
   <main class="sessions-main">
     <p>Choose an available session. Previously started sessions can be continued or restarted.</p>
     <p>
-      Completion tracking is not available yet, so the timing conditions have no prior session end.
+      After rating a completed session, use Report in the menu to save it. The next session unlocks
+      18 hours after the session ends.
     </p>
     {#if errorMessage}<p class="error" role="alert">{errorMessage}</p>{/if}
     {#if loading}

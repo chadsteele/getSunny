@@ -73,17 +73,14 @@ test('rejects invalid stored history and unknown sessions', () => {
   assert.throws(() => selectSessionForChat({ ...outline[0], path: '/missing' }, false));
 });
 
-test('groups sessions in outline order and respects availability conditions', () => {
-  const { groupSessions, isSessionEnabled } = sessionStorageApi;
+test('groups sessions in outline order', () => {
+  const { groupSessions } = sessionStorageApi;
   const grouped = groupSessions(outline);
   assert.deepEqual(
     grouped.map((step) => step.name),
     ['Assess', 'Create', 'Execution'],
   );
   assert.deepEqual(grouped[0].phases[0].sessions, outline.slice(0, 5));
-  const unavailable = { ...outline[0], condition: () => false };
-  assert.equal(isSessionEnabled(unavailable, [], new Date()), false);
-  assert.equal(isSessionEnabled(unavailable, [unavailable.path], new Date()), true);
 });
 
 test('initializes chats for continue and restart while retaining deleted history', () => {

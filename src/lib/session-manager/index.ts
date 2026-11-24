@@ -5,8 +5,8 @@ import { hasRatedReportSince } from './reports';
 import type { ChatMessage } from '../chat-thread-store.svelte';
 import { scheduleAnonymousSync } from '../anonymous-sync';
 
-export { selectSession } from './select-session';
-export { priorSessionReport, saveSessionReport } from './reports';
+export { availableSessionPaths, selectSession } from './select-session';
+export { completedSessionEnds, priorSessionReport, saveSessionReport } from './reports';
 export type { SavedSessionReport, SessionReportEntry } from './reports';
 export type { SessionProgress, SessionSelection } from './select-session';
 export { startsAtLeast18HoursAfterPreviousSession } from './condition';
@@ -39,17 +39,6 @@ export function groupSessions(outline: readonly BabyStep[]): SessionGroup[] {
     phase.sessions.push(session);
     return result;
   }, []);
-}
-
-export function isSessionEnabled(
-  session: BabyStep,
-  startedPaths: readonly string[],
-  now: Date,
-): boolean {
-  return (
-    startedPaths.includes(session.path) ||
-    session.condition({ sessionStart: now, previousSessionEnd: null })
-  );
 }
 
 export function createSessionChat(path: string) {
