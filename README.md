@@ -33,7 +33,7 @@ automatically trigger actions. Requests, raw responses, and parsed responses are
 browser console and Sunny's log viewer, including conversation and session details; avoid sharing
 these logs unless you intend to disclose their contents.
 
-When reopening an incomplete session at least one hour after its last non-empty transcription, Sunny speaks a brief welcome-back message without adding it to the conversation. A saved report with a satisfaction rating for the current chat marks it complete for this greeting; a restarted chat is treated separately. Speech usage is still included in the session's usage records.
+When reopening a saved chat, Sunny speaks a brief welcome-back greeting without adding it to the conversation. Incomplete sessions reopened at least one hour after the last non-empty transcription receive a longer greeting. If the browser blocks autoplay, the chat asks for a tap to play the audio. Speech usage is included in the session's usage records.
 
 Usage records are saved alongside the session chat in browser storage, including requests
 for replays and reports and requests associated with deleted or restarted chats. On localhost,

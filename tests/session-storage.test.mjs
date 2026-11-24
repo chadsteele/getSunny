@@ -101,6 +101,26 @@ test('initializes chats for continue and restart while retaining deleted history
   assert.equal(shouldRestartSession(outline[3].path), false);
 });
 
+test('restores recent, assistant-only, and timestamp-less conversations', () => {
+  const { chatStorageKey, createSessionChat, selectSessionForChat, welcomeBackGreeting } =
+    sessionStorageApi;
+  const session = outline[3];
+  const now = new Date('2026-01-01T10:05:00Z');
+  const conversations = [
+    [{ id: 0, role: 'user', content: 'Recent', timestamp: '2026-01-01T10:00:00Z' }],
+    [{ id: 0, role: 'assistant', content: 'Hello', timestamp: '2026-01-01T10:00:00Z' }],
+    [{ id: 0, role: 'user', content: 'Older chat' }],
+  ];
+  selectSessionForChat(session, false);
+  for (const messages of conversations) {
+    local.set(chatStorageKey(session.path), JSON.stringify(messages));
+    const restored = createSessionChat(session.path);
+    assert.equal(restored.initialize(), false);
+    assert.equal(welcomeBackGreeting(session.path, restored.chat.messages, now), 'Hi, welcome back.');
+    assert.equal(restored.chat.messages.length, 1);
+  }
+});
+
 test('assembles session prompt sections and validates missing prompt text', async () => {
   const { sessionPrompts } = sessionStorageApi;
   const { prompt, role, process, objectives, rules } = outline[0];

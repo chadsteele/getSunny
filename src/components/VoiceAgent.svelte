@@ -19,7 +19,7 @@
     priorSessionReport,
     saveSessionReport,
     sessionPrompts,
-    shouldWelcomeBack,
+    welcomeBackGreeting,
   } from '../lib/session-manager';
   import { contextInstruction, openingPrompt, sessionContext } from '../lib/session-context';
   import { startAnonymousSync } from '../lib/anonymous-sync';
@@ -59,6 +59,7 @@
   let mounted = false;
   let syncError = $state('');
   let microphoneGuidance = $state('');
+  let playbackGuidance = $state('');
 
   function startUsage(service: UsageRecord['service'], group: string) {
     return chatThread.addUsage(unknownUsage(service), group);
@@ -364,6 +365,7 @@
 
   function handleSpeakingEnd() {
     sunnySpeaking = false;
+    playbackGuidance = '';
     chatThreadView?.setNextHighlightScrollSuppressed(false);
     speakingSentence = '';
     if (conversationActive && !responseInProgress && !microphoneMuted) {
@@ -424,9 +426,9 @@
         await chatThreadView?.scrollToBottomBeforeSpeech();
         return true;
       });
-    } else if (!playIntro && shouldWelcomeBack(session.path, chatThread.messages, new Date())) {
+    } else if (!playIntro) {
       await speaker.speak(
-        "Welcome back! I'm glad you're here. Let's continue.",
+        welcomeBackGreeting(session.path, chatThread.messages, new Date()),
         crypto.randomUUID(),
       );
     }
@@ -499,7 +501,7 @@
         usageEntries={chatThread.usageEntries}
         {showUsage}
         {syncError}
-        guidance={microphoneGuidance}
+        guidance={playbackGuidance || microphoneGuidance}
         {liveTranscript}
         {speakingSentence}
         {reviewMessageId}
@@ -518,6 +520,8 @@
         onToggle={toggleSpeaker}
         onSpeakingSentence={handleSpeakingSentence}
         onSpeakingEnd={handleSpeakingEnd}
+        onPlaybackBlocked={() => (playbackGuidance = 'Tap anywhere to hear Sunny.')}
+        onPlaybackStarted={() => (playbackGuidance = '')}
         onVisualizerStart={(audio) => sparkle.startSpeaker(audio)}
         onVisualizerStop={() => sparkle?.stopSpeaker()}
         onError={handleSpeakingError}

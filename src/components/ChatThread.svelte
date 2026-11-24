@@ -389,6 +389,8 @@
     background: #160f06;
     cursor: pointer;
     margin-left: 6px;
+    height: fit-content;
+    line-height: 1;
   }
 
   .message-review-actions svg {

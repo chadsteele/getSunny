@@ -9,6 +9,8 @@
     muted: boolean;
     onSpeakingSentence?: (sentence: string, keepBottom: boolean) => void;
     onSpeakingEnd?: () => void;
+    onPlaybackBlocked?: () => void;
+    onPlaybackStarted?: () => void;
     onVisualizerStart: (audio: HTMLAudioElement) => void;
     onVisualizerStop: () => void;
     onToggle: () => void;
@@ -21,6 +23,8 @@
     muted,
     onSpeakingSentence,
     onSpeakingEnd,
+    onPlaybackBlocked,
+    onPlaybackStarted,
     onVisualizerStart,
     onVisualizerStop,
     onToggle,
@@ -197,6 +201,7 @@
           }
         }
         if (!playbackStarted) {
+          onPlaybackBlocked?.();
           await new Promise<void>((resolve) => {
             pendingPlaybackResolve = resolve;
           });
@@ -204,6 +209,7 @@
         if (muted || requestVersion !== playbackVersion) return;
         await audio.play();
       }
+      onPlaybackStarted?.();
       await new Promise<void>((resolve, reject) => {
         audio!.onended = () => resolve();
         audio!.onerror = () => reject(new Error('Speech audio playback failed.'));

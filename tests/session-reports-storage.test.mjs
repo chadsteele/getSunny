@@ -154,6 +154,10 @@ test('welcomes back incomplete sessions after one hour since the latest non-empt
     false,
   );
   assert.equal(manager.shouldWelcomeBack(path, messages, new Date('2026-01-01T11:05:00Z')), true);
+  assert.match(
+    manager.welcomeBackGreeting(path, messages, new Date('2026-01-01T11:05:00Z')),
+    /Let's continue/,
+  );
   assert.equal(
     manager.shouldWelcomeBack(path, messages.slice(0, 1), new Date('2026-01-02T00:00:00Z')),
     false,
@@ -180,6 +184,10 @@ test('welcomes back incomplete sessions after one hour since the latest non-empt
   completed.rank = 4;
   manager.saveSessionReport(path, completed);
   assert.equal(manager.shouldWelcomeBack(path, messages, new Date('2026-01-01T11:05:00Z')), false);
+  assert.equal(
+    manager.welcomeBackGreeting(path, messages, new Date('2026-01-01T11:05:00Z')),
+    'Hi, welcome back.',
+  );
   const resumed = [
     ...messages,
     { id: 4, role: 'user', content: 'One more thing', timestamp: '2026-01-01T11:20:00Z' },

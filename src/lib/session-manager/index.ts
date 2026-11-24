@@ -74,6 +74,12 @@ export function shouldWelcomeBack(
   return !hasRatedReportSince(path, firstMessage.timestamp);
 }
 
+export function welcomeBackGreeting(path: string, messages: readonly ChatMessage[], now: Date) {
+  return shouldWelcomeBack(path, messages, now)
+    ? "Welcome back! I'm glad you're here. Let's continue."
+    : 'Hi, welcome back.';
+}
+
 export function sessionPrompts(session: BabyStep) {
   const intro = session.intro;
   if (typeof intro !== 'string' || !intro.trim()) {
