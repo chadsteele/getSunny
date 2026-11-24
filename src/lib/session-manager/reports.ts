@@ -92,7 +92,9 @@ function readReports(): SessionReportEntry[] {
     const fields = parseSessionReport(
       JSON.stringify({
         name: report.name,
+        phonetic_name: 'phonetic_name' in report ? report.phonetic_name : null,
         summary: report.summary,
+        major_insights: 'major_insights' in report ? report.major_insights : null,
         rank: report.rank,
         comments: report.comments,
       }),

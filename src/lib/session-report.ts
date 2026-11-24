@@ -7,7 +7,9 @@ object with exactly these fields:
 
 {
   "name": string or null,
+  "phonetic_name": string or null,
   "summary": string,
+  "major_insights": string or null,
   "rank": integer from 1 to 5 or null,
   "comments": string or null
 }
@@ -20,7 +22,9 @@ has not shared any relevant details. Do not include markdown fences or explanato
 
 export interface SessionReport {
   name: string | null;
+  phonetic_name: string | null;
   summary: string;
+  major_insights: string | null;
   rank: number | null;
   comments: string | null;
 }
@@ -58,33 +62,26 @@ export function parseSessionReport(text: string): SessionReport {
   } catch {
     throw new Error('The report is not valid JSON.');
   }
-  if (
-    !value ||
-    typeof value !== 'object' ||
-    Array.isArray(value) ||
-    Object.keys(value).length !== 4 ||
-    !('name' in value) ||
-    !(typeof value.name === 'string' || value.name === null) ||
-    !('summary' in value) ||
-    typeof value.summary !== 'string' ||
-    !('rank' in value) ||
-    !(
-      value.rank === null ||
-      (typeof value.rank === 'number' &&
-        Number.isInteger(value.rank) &&
-        value.rank >= 1 &&
-        value.rank <= 5)
-    ) ||
-    !('comments' in value) ||
-    !(typeof value.comments === 'string' || value.comments === null)
-  ) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('The report does not match the required format.');
   }
+
+  const name = 'name' in value && (typeof value.name === 'string' || value.name === null) ? value.name : null;
+  const summary = 'summary' in value && typeof value.summary === 'string' ? value.summary : '';
+  const rank = 'rank' in value && (value.rank === null || (typeof value.rank === 'number' && Number.isInteger(value.rank) && value.rank >= 1 && value.rank <= 5)) ? value.rank : null;
+  const comments = 'comments' in value && (typeof value.comments === 'string' || value.comments === null) ? value.comments : null;
+
+  if (summary === '') {
+    throw new Error('The report does not match the required format.');
+  }
+
   return {
-    name: value.name,
-    summary: value.summary,
-    rank: value.rank,
-    comments: value.comments,
+    name,
+    phonetic_name: 'phonetic_name' in value && (typeof value.phonetic_name === 'string' || value.phonetic_name === null) ? value.phonetic_name : null,
+    summary,
+    major_insights: 'major_insights' in value && (typeof value.major_insights === 'string' || value.major_insights === null) ? value.major_insights : null,
+    rank,
+    comments,
   };
 }
 import type { ChatMessage } from './chat-thread-store.svelte';

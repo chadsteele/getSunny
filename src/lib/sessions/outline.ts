@@ -1,73 +1,98 @@
-import step1 from './assess/clarity/big-dreams';
-import step2 from './assess/clarity/real-returns';
-import step3 from './assess/clarity/hidden-interest';
-import step4 from './assess/clarity/habit-heroes';
-import step5 from './assess/clarity/first-map';
-import step6 from './assess/confidence/read-the-signal';
-import step7 from './assess/confidence/background-system';
-import step8 from './assess/confidence/old-operating-system';
-import step9 from './assess/confidence/reboot';
-import step10 from './assess/confidence/new-default';
-import step11 from './create/freedom/burn-the-boats';
-import step12 from './create/freedom/no-return-path';
-import step13 from './create/freedom/big-bang';
-import step14 from './create/freedom/small-principal';
-import step15 from './create/freedom/new-trajectory';
-import step16 from './create/power/find-the-levers';
-import step17 from './create/power/pull-the-levers';
-import step18 from './create/power/daily-practice';
-import step19 from './create/power/sustain-the-rate';
-import step20 from './create/power/capacity-compounds';
-import step21 from './execution/peace/i-am';
-import step22 from './execution/peace/answer-the-fear';
-import step23 from './execution/peace/quiet-capital';
-import step24 from './execution/peace/calm-default';
-import step25 from './execution/peace/new-identity';
-import step26 from './execution/prosperity/inherited-code';
-import step27 from './execution/prosperity/rewrite-the-dna';
-import step28 from './execution/prosperity/chosen-patterns';
-import step29 from './execution/prosperity/new-operating-system';
-import step30 from './execution/prosperity/infinite-horizon';
-import step31 from './execution/legacy/name-the-legacy';
-import step32 from './execution/legacy/break-the-chain';
-import step33 from './execution/legacy/model-the-code';
-import step34 from './execution/legacy/generational-return';
-import step35 from './execution/legacy/own-the-legacy';
+// 🤔 ASSESS: Understand where you are and see the life you're investing in.
+// Dream. Visualize. Clarify. Choose Peace.
+
+// Clarity: Retire the beliefs charging you interest.
+import bigDreams from './assess/clarity/big-dreams';
+import firstMap from './assess/clarity/first-map';
+import realReturns from './assess/clarity/real-returns';
+import hiddenInterest from './assess/clarity/hidden-interest';
+import habitHeroes from './assess/clarity/habit-heroes';
+
+// Peace: Build your new identity: financial freedom.
+import iAm from './assess/peace/i-am';
+import answerTheFear from './assess/peace/answer-the-fear';
+import quietCapital from './assess/peace/quiet-capital';
+import calmDefault from './assess/peace/calm-default';
+import newIdentity from './assess/peace/new-identity';
+
+// 😍 CREATE: Design the signals and systems that move you toward maximum impact.
+
+// Freedom: Inspiration. Motivation. Maximum impact.
+import burnTheBoats from './create/freedom/burn-the-boats';
+import noReturnPath from './create/freedom/no-return-path';
+import bigBang from './create/freedom/big-bang';
+import smallPrincipal from './create/freedom/small-principal';
+import newTrajectory from './create/freedom/new-trajectory';
+
+// Confidence: Rewire the scarcity operating system.
+import readTheSignal from './create/confidence/read-the-signal';
+import backgroundSystem from './create/confidence/background-system';
+import oldOperatingSystem from './create/confidence/old-operating-system';
+import reboot from './create/confidence/reboot';
+import newDefault from './create/confidence/new-default';
+
+// 😎 EXECUTE: Turn your new identity into action and create the future.
+
+// Power: The capacity to cause the future. Capacity compounds.
+import findTheLevers from './execution/power/find-the-levers';
+import pullTheLevers from './execution/power/pull-the-levers';
+import dailyPractice from './execution/power/daily-practice';
+import sustainTheRate from './execution/power/sustain-the-rate';
+import capacityCompounds from './execution/power/capacity-compounds';
+
+// Prosperity: New you. New DNA. New life.
+import inheritedCode from './execution/prosperity/inherited-code';
+import rewriteTheDna from './execution/prosperity/rewrite-the-dna';
+import chosenPatterns from './execution/prosperity/chosen-patterns';
+import newOperatingSystem from './execution/prosperity/new-operating-system';
+import infiniteHorizon from './execution/prosperity/infinite-horizon';
+
+// Legacy: Pay it forward.
+import nameTheLegacy from './execution/legacy/name-the-legacy';
+import breakTheChain from './execution/legacy/break-the-chain';
+import modelTheCode from './execution/legacy/model-the-code';
+import generationalReturn from './execution/legacy/generational-return';
+import ownTheLegacy from './execution/legacy/own-the-legacy';
 
 export default [
-  step1,
-  step2,
-  step3,
-  step4,
-  step5,
-  step6,
-  step7,
-  step8,
-  step9,
-  step10,
-  step11,
-  step12,
-  step13,
-  step14,
-  step15,
-  step16,
-  step17,
-  step18,
-  step19,
-  step20,
-  step21,
-  step22,
-  step23,
-  step24,
-  step25,
-  step26,
-  step27,
-  step28,
-  step29,
-  step30,
-  step31,
-  step32,
-  step33,
-  step34,
-  step35,
+  // 🤔 ASSESS
+  bigDreams,
+  firstMap,
+  realReturns,
+  hiddenInterest,
+  habitHeroes,
+  iAm,
+  answerTheFear,
+  quietCapital,
+  calmDefault,
+  newIdentity,
+  
+  // 😍 CREATE
+  burnTheBoats,
+  noReturnPath,
+  bigBang,
+  smallPrincipal,
+  newTrajectory,
+  readTheSignal,
+  backgroundSystem,
+  oldOperatingSystem,
+  reboot,
+  newDefault,
+  
+  // 😎 EXECUTE
+  findTheLevers,
+  pullTheLevers,
+  dailyPractice,
+  sustainTheRate,
+  capacityCompounds,
+  inheritedCode,
+  rewriteTheDna,
+  chosenPatterns,
+  newOperatingSystem,
+  infiniteHorizon,
+  nameTheLegacy,
+  breakTheChain,
+  modelTheCode,
+  generationalReturn,
+  ownTheLegacy,
 ];
