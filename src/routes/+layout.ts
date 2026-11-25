@@ -1,5 +1,10 @@
-// This app is fully client-side rendered (ssr = false), so it's served as a SPA
-// with a single HTML entry point. Set prerender = false to let Netlify serve all
-// routes dynamically from index.html, avoiding route-not-found errors.
-export const prerender = false;
+// This is a client-side SPA with no server-side rendering. Prerender = true
+// generates a static index.html that serves the app. The entries() function limits
+// prerendering to just the root route; SvelteKit's client-side router handles
+// all other routes. This avoids prerendering individual route HTML files.
+export const prerender = true;
 export const ssr = false;
+
+export function entries() {
+  return [{ path: '/' }];
+}
