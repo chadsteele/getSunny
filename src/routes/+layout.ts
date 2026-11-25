@@ -1,10 +1,5 @@
-// This is a client-side SPA with no server-side rendering. Prerender = true
-// generates a static index.html that serves the app. The entries() function limits
-// prerendering to just the root route; SvelteKit's client-side router handles
-// all other routes. This avoids prerendering individual route HTML files.
-export const prerender = true;
+// This is a client-side SPA with no server-side rendering. The Netlify adapter
+// generates a static bundle with index.html and the app JavaScript. All routes
+// are handled client-side by the router. The _redirects file rewrites non-existent
+// routes to index.html.
 export const ssr = false;
-
-export function entries() {
-  return [{ path: '/' }];
-}
