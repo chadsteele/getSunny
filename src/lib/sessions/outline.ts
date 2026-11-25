@@ -56,11 +56,15 @@ import ownTheLegacy from './execution/legacy/own-the-legacy';
 
 export default [
   // 🤔 ASSESS
+
+  // Clarity: Retire the beliefs charging you interest.
   bigDreams,
   firstMap,
   realReturns,
   hiddenInterest,
   habitHeroes,
+
+  // Peace: Build your new identity: financial freedom.
   iAm,
   answerTheFear,
   quietCapital,
@@ -68,11 +72,14 @@ export default [
   newIdentity,
   
   // 😍 CREATE
+
+  // Freedom: Inspiration. Motivation. Maximum impact.
   burnTheBoats,
   noReturnPath,
   bigBang,
   smallPrincipal,
   newTrajectory,
+  // Confidence: Rewire the scarcity operating system.
   readTheSignal,
   backgroundSystem,
   oldOperatingSystem,
@@ -80,16 +87,22 @@ export default [
   newDefault,
   
   // 😎 EXECUTE
+
+  // Power: The capacity to cause the future. Capacity compounds.
   findTheLevers,
   pullTheLevers,
   dailyPractice,
   sustainTheRate,
   capacityCompounds,
+
+  // Prosperity: New you. New DNA. New life.
   inheritedCode,
   rewriteTheDna,
   chosenPatterns,
   newOperatingSystem,
   infiniteHorizon,
+
+  // Legacy: Pay it forward.
   nameTheLegacy,
   breakTheChain,
   modelTheCode,

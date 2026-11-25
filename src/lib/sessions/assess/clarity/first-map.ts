@@ -9,7 +9,9 @@ export default {
   path: '/Assess/Clarity/First-Map',
   intro:
     `Welcome back <name>, 
-    This session is called First Map. We'll map the patterns behind your financial behavior and explore where they came from.`,
+    This session is called First Map. We'll map the patterns behind your financial behavior and explore where they came from.
+    
+    Take your time, mute the mic, pause, think, and then answer succinctly.  The goal is to create clarity.  Tonight is not a deep dive, just a quick assessment and reflection on your financial patterns.`,
   prompt:
    base.prompt + ``,
     
