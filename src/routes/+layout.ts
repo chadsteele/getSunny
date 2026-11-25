@@ -1,12 +1,5 @@
-// Prerender only the root route at build time. SSR is disabled, so routes must be
-// explicitly prerendered or marked with prerender = false to be served dynamically.
-// The /sessions route loads dynamic browser storage data, so it's excluded here and
-// marked with prerender = false in its own +page.ts to be served on-demand.
-export const prerender = true;
+// This app is fully client-side rendered (ssr = false), so it's served as a SPA
+// with a single HTML entry point. Set prerender = false to let Netlify serve all
+// routes dynamically from index.html, avoiding route-not-found errors.
+export const prerender = false;
 export const ssr = false;
-
-export async function entries() {
-  return [
-    { path: '/' },
-  ];
-}
