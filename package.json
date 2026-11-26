@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=26.12.1"
   },
   "scripts": {
     "dev": "concurrently --kill-others-on-fail \"vite\" \"node --env-file=.env ./node_modules/netlify-cli/bin/run.js functions:serve --offline --functions netlify/functions --port 9999\"",
@@ -16,21 +16,21 @@
     "format:check": "prettier --check \"src/**/*.{svelte,ts,css}\" \"netlify/functions/**/*.mjs\""
   },
   "devDependencies": {
-    "@sveltejs/adapter-netlify": "^5.2.4",
-    "@sveltejs/kit": "^2.70.3",
-    "@sveltejs/vite-plugin-svelte": "^6.0.0",
-    "concurrently": "^9.2.5",
-    "netlify-cli": "^27.19.0",
-    "prettier": "^3.9.10",
-    "prettier-plugin-svelte": "^4.1.1",
-    "svelte": "^5.16.0",
-    "svelte-check": "^4.1.4",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "@sveltejs/adapter-netlify": "^7.0.1",
+    "@sveltejs/kit": "^3.4.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.2",
+    "concurrently": "^10.0.7",
+    "netlify-cli": "^27.20.1",
+    "prettier": "^3.10.1",
+    "prettier-plugin-svelte": "^4.2.0",
+    "svelte": "^5.59.1",
+    "svelte-check": "^4.4.5",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.8"
   },
   "dependencies": {
-    "dompurify": "^3.4.17",
-    "marked": "^18.2.0",
-    "openai": "^7.55.0"
+    "dompurify": "^3.5.0",
+    "marked": "^18.3.0",
+    "openai": "^7.64.0"
   }
 }
