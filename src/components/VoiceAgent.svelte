@@ -76,14 +76,18 @@
   }
 
   function conversationMessages() {
-    return chatThread.messages.filter(({ role, content }) => role !== 'status' && content.trim());
+    return chatThread.messages.filter(
+      ({ role, content, deleted }) => !deleted && role !== 'status' && content.trim(),
+    );
   }
 
   function history(messages = conversationMessages()): ChatRequest['history'] {
-    return messages.map(({ role, content }) => ({
-      role: role === 'user' ? 'user' : 'model',
-      parts: [{ text: JSON.stringify({ text: content }) }],
-    }));
+    return messages
+      .filter(({ deleted }) => !deleted)
+      .map(({ role, content }) => ({
+        role: role === 'user' ? 'user' : 'model',
+        parts: [{ text: JSON.stringify({ text: content }) }],
+      }));
   }
 
   export async function generateReport() {
